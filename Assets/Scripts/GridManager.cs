@@ -109,7 +109,7 @@ public class GridManager : MonoBehaviour
         // Center the cursor between the two tiles it covers
         float centerX = (cursorPosition.x + 1f) * tileSize; // Position between left and right tile
         float centerY = cursorPosition.y * tileSize;
-        cursorVisual.transform.position = new Vector3(centerX, centerY, -1f);
+        cursorVisual.transform.position = new Vector3(centerX - 0.5f * tileSize, centerY, -1f);
 
         if(!usingPrefabCursor)
         {
