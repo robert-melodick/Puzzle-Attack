@@ -10,8 +10,8 @@ public class GridManager : MonoBehaviour
     public float tileSize = 1f;
     
     [Header("Prefabs")]
-    public GameObject tilePrefab; // The tile prefab to instantiate
-    public Sprite[] tileSprites; // Array of sprites for tiles
+    public GameObject tilePrefab; // Single tile prefab
+    public Sprite[] tileSprites; // Array of different colored sprites
     public GameObject tileBackground;
     
     private GameObject[,] grid;
@@ -64,7 +64,6 @@ public class GridManager : MonoBehaviour
     {
         Vector3 pos = new Vector3(x * tileSize, y * tileSize, 0);
         int randomIndex = Random.Range(0, tileSprites.Length);
-        
         GameObject tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
         
         // Set the sprite
@@ -135,10 +134,8 @@ public class GridManager : MonoBehaviour
         grid[pos2.x, pos2.y] = tile1;
         
         // Update tile positions
-        tile1.GetComponent<Tile>().gridX = pos2.x;
-        tile1.GetComponent<Tile>().gridY = pos2.y;
-        tile2.GetComponent<Tile>().gridX = pos1.x;
-        tile2.GetComponent<Tile>().gridY = pos1.y;
+        tile1.GetComponent<Tile>().Initialize(pos2.x, pos2.y, tile1.GetComponent<Tile>().TileType, this);
+        tile2.GetComponent<Tile>().Initialize(pos1.x, pos1.y, tile2.GetComponent<Tile>().TileType, this);
         
         // Animate swap
         yield return StartCoroutine(MoveTile(tile1, pos2));
@@ -156,10 +153,8 @@ public class GridManager : MonoBehaviour
             // Swap back if no matches
             grid[pos1.x, pos1.y] = tile1;
             grid[pos2.x, pos2.y] = tile2;
-            tile1.GetComponent<Tile>().gridX = pos1.x;
-            tile1.GetComponent<Tile>().gridY = pos1.y;
-            tile2.GetComponent<Tile>().gridX = pos2.x;
-            tile2.GetComponent<Tile>().gridY = pos2.y;
+            tile1.GetComponent<Tile>().Initialize(pos1.x, pos1.y, tile1.GetComponent<Tile>().TileType, this);
+            tile2.GetComponent<Tile>().Initialize(pos2.x, pos2.y, tile2.GetComponent<Tile>().TileType, this);
             
             yield return StartCoroutine(MoveTile(tile1, pos1));
             yield return StartCoroutine(MoveTile(tile2, pos2));
@@ -197,7 +192,7 @@ public class GridManager : MonoBehaviour
                 if (tile != null)
                 {
                     Tile tileScript = tile.GetComponent<Tile>();
-                    grid[tileScript.gridX, tileScript.gridY] = null;
+                    grid[tileScript.GridX, tileScript.GridY] = null;
                     Destroy(tile);
                 }
             }
@@ -231,7 +226,6 @@ public class GridManager : MonoBehaviour
                             grid[x, aboveY] = null;
                             
                             Tile tile = grid[x, y].GetComponent<Tile>();
-                            tile.gridY = y;
                             StartCoroutine(MoveTile(grid[x, y], new Vector2Int(x, y)));
                             break;
                         }
@@ -269,9 +263,9 @@ public class GridManager : MonoBehaviour
             {
                 if (grid[x, y] != null && grid[x + 1, y] != null && grid[x + 2, y] != null)
                 {
-                    int type1 = grid[x, y].GetComponent<Tile>().tileType;
-                    int type2 = grid[x + 1, y].GetComponent<Tile>().tileType;
-                    int type3 = grid[x + 2, y].GetComponent<Tile>().tileType;
+                    int type1 = grid[x, y].GetComponent<Tile>().TileType;
+                    int type2 = grid[x + 1, y].GetComponent<Tile>().TileType;
+                    int type3 = grid[x + 2, y].GetComponent<Tile>().TileType;
                     
                     if (type1 == type2 && type2 == type3)
                     {
@@ -290,9 +284,9 @@ public class GridManager : MonoBehaviour
             {
                 if (grid[x, y] != null && grid[x, y + 1] != null && grid[x, y + 2] != null)
                 {
-                    int type1 = grid[x, y].GetComponent<Tile>().tileType;
-                    int type2 = grid[x, y + 1].GetComponent<Tile>().tileType;
-                    int type3 = grid[x, y + 2].GetComponent<Tile>().tileType;
+                    int type1 = grid[x, y].GetComponent<Tile>().TileType;
+                    int type2 = grid[x, y + 1].GetComponent<Tile>().TileType;
+                    int type3 = grid[x, y + 2].GetComponent<Tile>().TileType;
                     
                     if (type1 == type2 && type2 == type3)
                     {
@@ -316,21 +310,5 @@ public class GridManager : MonoBehaviour
     bool IsValidPosition(int x, int y)
     {
         return x >= 0 && x < gridWidth && y >= 0 && y < gridHeight;
-    }
-}
-
-public class Tile : MonoBehaviour
-{
-    public int gridX;
-    public int gridY;
-    public int tileType;
-    private GridManager gridManager;
-    
-    public void Initialize(int x, int y, int type, GridManager manager)
-    {
-        gridX = x;
-        gridY = y;
-        tileType = type;
-        gridManager = manager;
     }
 }
