@@ -16,14 +16,15 @@ public class GridManager : MonoBehaviour
     public GameObject cursorPrefab; // Visual indicator for the cursor
     
     [Header("Cursor Settings")]
+    public int cursorWidth = 2; // Cursor covers 2 tiles horizontally
+    public int cursorHeight = 1; // Cursor covers 1 tile vertically
     public Color cursorColor = new Color(1f, 1f, 1f, 0.5f);
-    public float cursorWidth = 2f;
-    public float cursorHeight = 1f;
+    private bool usingPrefabCursor = false;
     
     private GameObject[,] grid;
     private Vector2Int cursorPosition; // Left position of the 1x2 cursor
     private GameObject cursorVisual;
-    private bool isProcessing = false;
+    private bool isSwapping = false; // Only blocks swapping, not cursor movement
     
     void Start()
     {
@@ -55,6 +56,7 @@ public class GridManager : MonoBehaviour
         if (cursorPrefab != null)
         {
             cursorVisual = Instantiate(cursorPrefab, Vector3.zero, Quaternion.identity, transform);
+            usingPrefabCursor = true;
         }
         else
         {
@@ -66,6 +68,7 @@ public class GridManager : MonoBehaviour
             sr.sprite = CreateCursorSprite();
             sr.color = cursorColor;
             sr.sortingOrder = 10;
+            usingPrefabCursor = false;
         }
         
         UpdateCursorPosition();
@@ -103,10 +106,17 @@ public class GridManager : MonoBehaviour
     
     void UpdateCursorPosition()
     {
-        float centerX = (cursorPosition.x + 0.5f) * tileSize;
+        // Center the cursor between the two tiles it covers
+        float centerX = (cursorPosition.x + 1f) * tileSize; // Position between left and right tile
         float centerY = cursorPosition.y * tileSize;
         cursorVisual.transform.position = new Vector3(centerX, centerY, -1f);
-        cursorVisual.transform.localScale = new Vector3(cursorWidth * tileSize / cursorWidth, cursorHeight * tileSize / cursorHeight, 1f);
+
+        if(!usingPrefabCursor)
+        {
+            // Scale to cover exactly 2 tiles wide and 1 tile tall
+        cursorVisual.transform.localScale = new Vector3(cursorWidth * tileSize, cursorHeight * tileSize, 1f);
+        }
+        
     }
     
     IEnumerator FillGrid()
@@ -143,9 +153,7 @@ public class GridManager : MonoBehaviour
     
     void Update()
     {
-        if (isProcessing) return;
-        
-        // Cursor movement
+        // Cursor movement (always allowed)
         if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
         {
             MoveCursor(-1, 0);
@@ -163,8 +171,8 @@ public class GridManager : MonoBehaviour
             MoveCursor(0, -1);
         }
         
-        // Swap tiles
-        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return))
+        // Swap tiles (only when not already swapping)
+        if (!isSwapping && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return)))
         {
             StartCoroutine(SwapCursorTiles());
         }
@@ -181,7 +189,7 @@ public class GridManager : MonoBehaviour
     
     IEnumerator SwapCursorTiles()
     {
-        isProcessing = true;
+        isSwapping = true;
         
         int leftX = cursorPosition.x;
         int rightX = cursorPosition.x + 1;
@@ -212,7 +220,7 @@ public class GridManager : MonoBehaviour
         // Check for matches and process
         yield return StartCoroutine(CheckAndClearMatches());
         
-        isProcessing = false;
+        isSwapping = false;
     }
     
     IEnumerator MoveTile(GameObject tile, Vector2Int targetPos)
