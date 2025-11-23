@@ -10,19 +10,27 @@ public class GridManager : MonoBehaviour
     public float tileSize = 1f;
     
     [Header("Prefabs")]
-    public GameObject tilePrefab; // Single tile prefab
-    public Sprite[] tileSprites; // Array of different colored sprites
+    public GameObject tilePrefab;
+    public Sprite[] tileSprites;
     public GameObject tileBackground;
+    public GameObject cursorPrefab; // Visual indicator for the cursor
+    
+    [Header("Cursor Settings")]
+    public Color cursorColor = new Color(1f, 1f, 1f, 0.5f);
+    public float cursorWidth = 2f;
+    public float cursorHeight = 1f;
     
     private GameObject[,] grid;
-    private GameObject selectedTile;
-    private Vector2Int selectedPos;
+    private Vector2Int cursorPosition; // Left position of the 1x2 cursor
+    private GameObject cursorVisual;
     private bool isProcessing = false;
     
     void Start()
     {
         grid = new GameObject[gridWidth, gridHeight];
+        cursorPosition = new Vector2Int(0, gridHeight / 2);
         CreateGrid();
+        CreateCursor();
         StartCoroutine(FillGrid());
     }
     
@@ -42,6 +50,65 @@ public class GridManager : MonoBehaviour
         }
     }
     
+    void CreateCursor()
+    {
+        if (cursorPrefab != null)
+        {
+            cursorVisual = Instantiate(cursorPrefab, Vector3.zero, Quaternion.identity, transform);
+        }
+        else
+        {
+            // Create a simple cursor visual
+            cursorVisual = new GameObject("Cursor");
+            cursorVisual.transform.SetParent(transform);
+            
+            SpriteRenderer sr = cursorVisual.AddComponent<SpriteRenderer>();
+            sr.sprite = CreateCursorSprite();
+            sr.color = cursorColor;
+            sr.sortingOrder = 10;
+        }
+        
+        UpdateCursorPosition();
+    }
+    
+    Sprite CreateCursorSprite()
+    {
+        // Create a simple rectangular sprite for the cursor
+        Texture2D tex = new Texture2D(200, 100);
+        Color[] pixels = new Color[200 * 100];
+        
+        // Fill with transparent
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            pixels[i] = Color.clear;
+        }
+        
+        // Draw border
+        for (int x = 0; x < 200; x++)
+        {
+            for (int y = 0; y < 100; y++)
+            {
+                if (x < 5 || x >= 195 || y < 5 || y >= 95)
+                {
+                    pixels[y * 200 + x] = Color.white;
+                }
+            }
+        }
+        
+        tex.SetPixels(pixels);
+        tex.Apply();
+        
+        return Sprite.Create(tex, new Rect(0, 0, 200, 100), new Vector2(0.5f, 0.5f), 100);
+    }
+    
+    void UpdateCursorPosition()
+    {
+        float centerX = (cursorPosition.x + 0.5f) * tileSize;
+        float centerY = cursorPosition.y * tileSize;
+        cursorVisual.transform.position = new Vector3(centerX, centerY, -1f);
+        cursorVisual.transform.localScale = new Vector3(cursorWidth * tileSize / cursorWidth, cursorHeight * tileSize / cursorHeight, 1f);
+    }
+    
     IEnumerator FillGrid()
     {
         for (int x = 0; x < gridWidth; x++)
@@ -56,7 +123,6 @@ public class GridManager : MonoBehaviour
             }
         }
         
-        // Check for initial matches and clear them
         yield return StartCoroutine(CheckAndClearMatches());
     }
     
@@ -66,7 +132,6 @@ public class GridManager : MonoBehaviour
         int randomIndex = Random.Range(0, tileSprites.Length);
         GameObject tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
         
-        // Set the sprite
         SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
         sr.sprite = tileSprites[randomIndex];
         
@@ -80,91 +145,80 @@ public class GridManager : MonoBehaviour
     {
         if (isProcessing) return;
         
-        if (Input.GetMouseButtonDown(0))
+        // Cursor movement
+        if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
         {
-            Vector3 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-            int x = Mathf.RoundToInt(mousePos.x / tileSize);
-            int y = Mathf.RoundToInt(mousePos.y / tileSize);
-            
-            if (IsValidPosition(x, y))
-            {
-                if (selectedTile == null)
-                {
-                    SelectTile(x, y);
-                }
-                else
-                {
-                    if (IsAdjacent(selectedPos, new Vector2Int(x, y)))
-                    {
-                        StartCoroutine(SwapTiles(selectedPos, new Vector2Int(x, y)));
-                    }
-                    DeselectTile();
-                }
-            }
+            MoveCursor(-1, 0);
         }
-    }
-    
-    void SelectTile(int x, int y)
-    {
-        selectedTile = grid[x, y];
-        selectedPos = new Vector2Int(x, y);
+        else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D))
+        {
+            MoveCursor(1, 0);
+        }
+        else if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W))
+        {
+            MoveCursor(0, 1);
+        }
+        else if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S))
+        {
+            MoveCursor(0, -1);
+        }
         
-        // Visual feedback
-        selectedTile.transform.localScale = Vector3.one * 1.1f;
-    }
-    
-    void DeselectTile()
-    {
-        if (selectedTile != null)
+        // Swap tiles
+        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return))
         {
-            selectedTile.transform.localScale = Vector3.one;
+            StartCoroutine(SwapCursorTiles());
         }
-        selectedTile = null;
     }
     
-    IEnumerator SwapTiles(Vector2Int pos1, Vector2Int pos2)
+    void MoveCursor(int deltaX, int deltaY)
+    {
+        int newX = Mathf.Clamp(cursorPosition.x + deltaX, 0, gridWidth - 2);
+        int newY = Mathf.Clamp(cursorPosition.y + deltaY, 0, gridHeight - 1);
+        
+        cursorPosition = new Vector2Int(newX, newY);
+        UpdateCursorPosition();
+    }
+    
+    IEnumerator SwapCursorTiles()
     {
         isProcessing = true;
         
-        GameObject tile1 = grid[pos1.x, pos1.y];
-        GameObject tile2 = grid[pos2.x, pos2.y];
+        int leftX = cursorPosition.x;
+        int rightX = cursorPosition.x + 1;
+        int y = cursorPosition.y;
+        
+        GameObject leftTile = grid[leftX, y];
+        GameObject rightTile = grid[rightX, y];
         
         // Swap in grid
-        grid[pos1.x, pos1.y] = tile2;
-        grid[pos2.x, pos2.y] = tile1;
+        grid[leftX, y] = rightTile;
+        grid[rightX, y] = leftTile;
         
-        // Update tile positions
-        tile1.GetComponent<Tile>().Initialize(pos2.x, pos2.y, tile1.GetComponent<Tile>().TileType, this);
-        tile2.GetComponent<Tile>().Initialize(pos1.x, pos1.y, tile2.GetComponent<Tile>().TileType, this);
-        
-        // Animate swap
-        yield return StartCoroutine(MoveTile(tile1, pos2));
-        yield return StartCoroutine(MoveTile(tile2, pos1));
-        
-        // Check for matches
-        List<GameObject> matches = GetAllMatches();
-        
-        if (matches.Count > 0)
+        // Update tile data and animate
+        if (leftTile != null)
         {
-            yield return StartCoroutine(CheckAndClearMatches());
+            leftTile.GetComponent<Tile>().Initialize(rightX, y, leftTile.GetComponent<Tile>().TileType, this);
+            StartCoroutine(MoveTile(leftTile, new Vector2Int(rightX, y)));
         }
-        else
+        
+        if (rightTile != null)
         {
-            // Swap back if no matches
-            grid[pos1.x, pos1.y] = tile1;
-            grid[pos2.x, pos2.y] = tile2;
-            tile1.GetComponent<Tile>().Initialize(pos1.x, pos1.y, tile1.GetComponent<Tile>().TileType, this);
-            tile2.GetComponent<Tile>().Initialize(pos2.x, pos2.y, tile2.GetComponent<Tile>().TileType, this);
-            
-            yield return StartCoroutine(MoveTile(tile1, pos1));
-            yield return StartCoroutine(MoveTile(tile2, pos2));
+            rightTile.GetComponent<Tile>().Initialize(leftX, y, rightTile.GetComponent<Tile>().TileType, this);
+            StartCoroutine(MoveTile(rightTile, new Vector2Int(leftX, y)));
         }
+        
+        yield return new WaitForSeconds(0.3f);
+        
+        // Check for matches and process
+        yield return StartCoroutine(CheckAndClearMatches());
         
         isProcessing = false;
     }
     
     IEnumerator MoveTile(GameObject tile, Vector2Int targetPos)
     {
+        if (tile == null) yield break;
+        
         Vector3 targetWorldPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize, 0);
         float duration = 0.2f;
         float elapsed = 0;
@@ -186,7 +240,6 @@ public class GridManager : MonoBehaviour
         
         while (allMatches.Count > 0)
         {
-            // Clear matches
             foreach (GameObject tile in allMatches)
             {
                 if (tile != null)
@@ -198,14 +251,9 @@ public class GridManager : MonoBehaviour
             }
             
             yield return new WaitForSeconds(0.3f);
-            
-            // Drop tiles
             yield return StartCoroutine(DropTiles());
-            
-            // Fill empty spaces
             yield return StartCoroutine(FillEmptySpaces());
             
-            // Check for new matches
             allMatches = GetAllMatches();
         }
     }
@@ -226,6 +274,7 @@ public class GridManager : MonoBehaviour
                             grid[x, aboveY] = null;
                             
                             Tile tile = grid[x, y].GetComponent<Tile>();
+                            tile.Initialize(x, y, tile.TileType, this);
                             StartCoroutine(MoveTile(grid[x, y], new Vector2Int(x, y)));
                             break;
                         }
@@ -299,12 +348,6 @@ public class GridManager : MonoBehaviour
         }
         
         return new List<GameObject>(matches);
-    }
-    
-    bool IsAdjacent(Vector2Int pos1, Vector2Int pos2)
-    {
-        return (Mathf.Abs(pos1.x - pos2.x) == 1 && pos1.y == pos2.y) ||
-               (Mathf.Abs(pos1.y - pos2.y) == 1 && pos1.x == pos2.x);
     }
     
     bool IsValidPosition(int x, int y)

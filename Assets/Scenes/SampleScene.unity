@@ -159,7 +159,7 @@ MonoBehaviour:
   - {fileID: 21300000, guid: a0b8db0b0dac98c4f8c574bd4a6d86ca, type: 3}
   - {fileID: 21300000, guid: f55bcf920c54c964da3f01aeff11c6b2, type: 3}
   - {fileID: 21300000, guid: 105489575e7649b42985cf1123c50d02, type: 3}
-  tileBackground: {fileID: 0}
+  tileBackground: {fileID: 5685540458441023407, guid: 7d87b9ae930c7be4c9eb3cf8685966e7, type: 3}
 --- !u!4 &157685458
 Transform:
   m_ObjectHideFlags: 0
@@ -236,8 +236,8 @@ Camera:
   near clip plane: 0.3
   far clip plane: 1000
   field of view: 60
-  orthographic: 0
-  orthographic size: 5
+  orthographic: 1
+  orthographic size: 8
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -262,7 +262,7 @@ Transform:
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 3, y: 3, z: -10}
+  m_LocalPosition: {x: 3, y: 6, z: -10}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
