@@ -1,1 +1,1 @@
-This is a Unity side project for a simple match 3 game, inspired by Panel De Pon and it's spin offs.
+This is a Unity side project for a simple match 3 game, inspired by Panel De Pon and its spin offs.
