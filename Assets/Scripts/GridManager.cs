@@ -10,6 +10,7 @@ public class GridManager : MonoBehaviour
     public float tileSize = 1f;
     
     [Header("Prefabs")]
+    public ScoreManager scoreManager;
     public GameObject tilePrefab;
     public Sprite[] tileSprites;
     public GameObject tileBackground;
@@ -242,12 +243,19 @@ public class GridManager : MonoBehaviour
         tile.transform.position = targetWorldPos;
     }
     
-    IEnumerator CheckAndClearMatches()
+     IEnumerator CheckAndClearMatches()
     {
         List<GameObject> allMatches = GetAllMatches();
-        
+        Debug.Log($"Found {allMatches.Count} matched tiles.");
         while (allMatches.Count > 0)
         {
+            // Add score for matched tiles
+            if (scoreManager != null)
+            {
+                Debug.Log($"Matched {allMatches.Count} tiles.");
+                scoreManager.AddScore(allMatches.Count);
+            }
+            
             foreach (GameObject tile in allMatches)
             {
                 if (tile != null)
@@ -263,6 +271,12 @@ public class GridManager : MonoBehaviour
             yield return StartCoroutine(FillEmptySpaces());
             
             allMatches = GetAllMatches();
+        }
+        
+        // Reset combo when no more matches found
+        if (scoreManager != null)
+        {
+            scoreManager.ResetCombo();
         }
     }
     

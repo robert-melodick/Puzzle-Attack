@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro; // For TextMeshPro support
 
 public class ScoreManager : MonoBehaviour
 {
@@ -7,9 +8,9 @@ public class ScoreManager : MonoBehaviour
     public int pointsPerTile = 10;
     public float comboMultiplier = 0.5f; // Each combo adds 50% more points
     
-    [Header("UI References")]
-    public Text scoreText;
-    public Text comboText;
+    [Header("OR use TextMeshPro (TMP)")]
+    public TextMeshProUGUI scoreText; // TextMeshPro
+    public TextMeshProUGUI comboText; // TextMeshPro
     
     private int currentScore = 0;
     private int currentCombo = 0;
@@ -51,16 +52,20 @@ public class ScoreManager : MonoBehaviour
     
     void UpdateUI()
     {
+        string scoreString = $"Score: {currentScore}";
+        string comboString = $"Combo x{currentCombo}";
+        
+        // Update TextMeshPro if assigned
         if (scoreText != null)
         {
-            scoreText.text = $"Score: {currentScore}";
+            scoreText.text = scoreString;
         }
         
         if (comboText != null)
         {
-            if (currentCombo > 0)
+            if (currentCombo > 1)
             {
-                comboText.text = $"Combo x{currentCombo + 1}";
+                comboText.text = comboString;
                 comboText.gameObject.SetActive(true);
             }
             else
