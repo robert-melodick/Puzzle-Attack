@@ -9,6 +9,10 @@ public class GridManager : MonoBehaviour
     public int gridHeight = 8;
     public float tileSize = 1f;
     
+    [Header("Match Processing")]
+    public float processMatchDuration = 1.5f; // How long matched tiles blink before clearing
+    public float blinkSpeed = 0.15f; // Time between blinks
+    
     [Header("Prefabs")]
     public ScoreManager scoreManager;
     public GameObject tilePrefab;
@@ -25,7 +29,8 @@ public class GridManager : MonoBehaviour
     private GameObject[,] grid;
     private Vector2Int cursorPosition; // Left position of the 1x2 cursor
     private GameObject cursorVisual;
-    private bool isSwapping = false; // Only blocks swapping, not cursor movement
+    private bool isSwapping = false; // Only blocks swapping at current cursor position
+    private HashSet<Vector2Int> processingTiles = new HashSet<Vector2Int>(); // Tracks tiles being processed
     
     void Start()
     {
@@ -115,9 +120,8 @@ public class GridManager : MonoBehaviour
         if(!usingPrefabCursor)
         {
             // Scale to cover exactly 2 tiles wide and 1 tile tall
-        cursorVisual.transform.localScale = new Vector3(cursorWidth * tileSize, cursorHeight * tileSize, 1f);
+            cursorVisual.transform.localScale = new Vector3(cursorWidth * tileSize, cursorHeight * tileSize, 1f);
         }
-        
     }
     
     IEnumerator FillGrid()
@@ -172,10 +176,21 @@ public class GridManager : MonoBehaviour
             MoveCursor(0, -1);
         }
         
-        // Swap tiles (only when not already swapping)
+        // Swap tiles (check if tiles are being processed)
         if (!isSwapping && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return)))
         {
-            StartCoroutine(SwapCursorTiles());
+            int leftX = cursorPosition.x;
+            int rightX = cursorPosition.x + 1;
+            int y = cursorPosition.y;
+            
+            if (!IsTileBeingProcessed(leftX, y) && !IsTileBeingProcessed(rightX, y))
+            {
+                StartCoroutine(SwapCursorTiles());
+            }
+            else
+            {
+                Debug.Log("Cannot swap - tiles are being processed!");
+            }
         }
     }
     
@@ -216,10 +231,16 @@ public class GridManager : MonoBehaviour
             StartCoroutine(MoveTile(rightTile, new Vector2Int(leftX, y)));
         }
         
-        yield return new WaitForSeconds(0.3f);
+        yield return new WaitForSeconds(0.2f);
         
-        // Check for matches and process
-        yield return StartCoroutine(CheckAndClearMatches());
+        // Check only the immediate area for matches
+        List<GameObject> matches = GetMatchesInArea(leftX - 2, rightX + 2, y - 2, y + 2);
+        
+        if (matches.Count > 0)
+        {
+            // Start a separate coroutine to process these matches
+            StartCoroutine(ProcessMatches(matches));
+        }
         
         isSwapping = false;
     }
@@ -243,12 +264,26 @@ public class GridManager : MonoBehaviour
         tile.transform.position = targetWorldPos;
     }
     
-     IEnumerator CheckAndClearMatches()
+    IEnumerator CheckAndClearMatches()
     {
         List<GameObject> allMatches = GetAllMatches();
         Debug.Log($"Found {allMatches.Count} matched tiles.");
+        
         while (allMatches.Count > 0)
         {
+            // Mark tiles as being processed
+            foreach (GameObject tile in allMatches)
+            {
+                if (tile != null)
+                {
+                    Tile tileScript = tile.GetComponent<Tile>();
+                    processingTiles.Add(new Vector2Int(tileScript.GridX, tileScript.GridY));
+                }
+            }
+            
+            // Blink matched tiles
+            yield return StartCoroutine(BlinkTiles(allMatches, processMatchDuration));
+            
             // Add score for matched tiles
             if (scoreManager != null)
             {
@@ -266,9 +301,12 @@ public class GridManager : MonoBehaviour
                 }
             }
             
-            yield return new WaitForSeconds(0.3f);
+            yield return new WaitForSeconds(0.1f);
             yield return StartCoroutine(DropTiles());
             yield return StartCoroutine(FillEmptySpaces());
+            
+            // Clear processing tiles before checking for new matches
+            processingTiles.Clear();
             
             allMatches = GetAllMatches();
         }
@@ -277,6 +315,63 @@ public class GridManager : MonoBehaviour
         if (scoreManager != null)
         {
             scoreManager.ResetCombo();
+        }
+    }
+    
+    IEnumerator ProcessMatches(List<GameObject> matches)
+    {
+        if (matches.Count == 0) yield break;
+        
+        // Mark tiles as being processed
+        foreach (GameObject tile in matches)
+        {
+            if (tile != null)
+            {
+                Tile tileScript = tile.GetComponent<Tile>();
+                processingTiles.Add(new Vector2Int(tileScript.GridX, tileScript.GridY));
+            }
+        }
+        
+        // Blink matched tiles
+        yield return StartCoroutine(BlinkTiles(matches, processMatchDuration));
+        
+        // Add score for matched tiles
+        if (scoreManager != null)
+        {
+            Debug.Log($"Matched {matches.Count} tiles.");
+            scoreManager.AddScore(matches.Count);
+        }
+        
+        foreach (GameObject tile in matches)
+        {
+            if (tile != null)
+            {
+                Tile tileScript = tile.GetComponent<Tile>();
+                grid[tileScript.GridX, tileScript.GridY] = null;
+                Destroy(tile);
+            }
+        }
+        
+        yield return new WaitForSeconds(0.1f);
+        yield return StartCoroutine(DropTiles());
+        yield return StartCoroutine(FillEmptySpaces());
+        
+        // Clear processing tiles
+        processingTiles.Clear();
+        
+        // Check for cascade matches in the affected area
+        List<GameObject> cascadeMatches = GetAllMatches();
+        if (cascadeMatches.Count > 0)
+        {
+            yield return StartCoroutine(ProcessMatches(cascadeMatches));
+        }
+        else
+        {
+            // Only reset combo if no more cascades
+            if (scoreManager != null)
+            {
+                scoreManager.ResetCombo();
+            }
         }
     }
     
@@ -306,6 +401,51 @@ public class GridManager : MonoBehaviour
         }
         
         yield return new WaitForSeconds(0.3f);
+    }
+    
+    IEnumerator BlinkTiles(List<GameObject> tiles, float duration)
+    {
+        float elapsed = 0f;
+        bool isVisible = true;
+        
+        // Store original SpriteRenderers
+        List<SpriteRenderer> spriteRenderers = new List<SpriteRenderer>();
+        foreach (GameObject tile in tiles)
+        {
+            if (tile != null)
+            {
+                SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+                if (sr != null)
+                {
+                    spriteRenderers.Add(sr);
+                }
+            }
+        }
+        
+        while (elapsed < duration)
+        {
+            // Toggle visibility
+            isVisible = !isVisible;
+            foreach (SpriteRenderer sr in spriteRenderers)
+            {
+                if (sr != null)
+                {
+                    sr.enabled = isVisible;
+                }
+            }
+            
+            yield return new WaitForSeconds(blinkSpeed);
+            elapsed += blinkSpeed;
+        }
+        
+        // Ensure all tiles are visible at the end
+        foreach (SpriteRenderer sr in spriteRenderers)
+        {
+            if (sr != null)
+            {
+                sr.enabled = true;
+            }
+        }
     }
     
     IEnumerator FillEmptySpaces()
@@ -370,6 +510,66 @@ public class GridManager : MonoBehaviour
         }
         
         return new List<GameObject>(matches);
+    }
+    
+    List<GameObject> GetMatchesInArea(int minX, int maxX, int minY, int maxY)
+    {
+        HashSet<GameObject> matches = new HashSet<GameObject>();
+        
+        // Clamp to grid bounds
+        minX = Mathf.Max(0, minX);
+        maxX = Mathf.Min(gridWidth - 1, maxX);
+        minY = Mathf.Max(0, minY);
+        maxY = Mathf.Min(gridHeight - 1, maxY);
+        
+        // Check horizontal matches in area
+        for (int y = minY; y <= maxY; y++)
+        {
+            for (int x = minX; x <= maxX - 2; x++)
+            {
+                if (grid[x, y] != null && grid[x + 1, y] != null && grid[x + 2, y] != null)
+                {
+                    int type1 = grid[x, y].GetComponent<Tile>().TileType;
+                    int type2 = grid[x + 1, y].GetComponent<Tile>().TileType;
+                    int type3 = grid[x + 2, y].GetComponent<Tile>().TileType;
+                    
+                    if (type1 == type2 && type2 == type3)
+                    {
+                        matches.Add(grid[x, y]);
+                        matches.Add(grid[x + 1, y]);
+                        matches.Add(grid[x + 2, y]);
+                    }
+                }
+            }
+        }
+        
+        // Check vertical matches in area
+        for (int x = minX; x <= maxX; x++)
+        {
+            for (int y = minY; y <= maxY - 2; y++)
+            {
+                if (grid[x, y] != null && grid[x, y + 1] != null && grid[x, y + 2] != null)
+                {
+                    int type1 = grid[x, y].GetComponent<Tile>().TileType;
+                    int type2 = grid[x, y + 1].GetComponent<Tile>().TileType;
+                    int type3 = grid[x, y + 2].GetComponent<Tile>().TileType;
+                    
+                    if (type1 == type2 && type2 == type3)
+                    {
+                        matches.Add(grid[x, y]);
+                        matches.Add(grid[x, y + 1]);
+                        matches.Add(grid[x, y + 2]);
+                    }
+                }
+            }
+        }
+        
+        return new List<GameObject>(matches);
+    }
+    
+    bool IsTileBeingProcessed(int x, int y)
+    {
+        return processingTiles.Contains(new Vector2Int(x, y));
     }
     
     bool IsValidPosition(int x, int y)
