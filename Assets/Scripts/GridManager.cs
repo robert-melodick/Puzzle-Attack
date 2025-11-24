@@ -9,36 +9,54 @@ public class GridManager : MonoBehaviour
     public int gridHeight = 8;
     public float tileSize = 1f;
     
+    [Header("Grid Initialization")]
+    public int initialFillRows = 4; // How many rows to preload at start
+    public int preloadRows = 2; // Extra rows preloaded below visible grid
+    
+    [Header("Rising Mechanics")]
+    public float normalRiseSpeed = 0.5f; // Units per second
+    public float fastRiseSpeed = 2f; // Units per second when holding X
+    public float gracePeriod = 2f; // Seconds before game over when block reaches top
+    
     [Header("Match Processing")]
-    public float processMatchDuration = 1.5f; // How long matched tiles blink before clearing
-    public float blinkSpeed = 0.15f; // Time between blinks
+    public float processMatchDuration = 1.5f;
+    public float blinkSpeed = 0.15f;
     
     [Header("Prefabs")]
     public ScoreManager scoreManager;
     public GameObject tilePrefab;
     public Sprite[] tileSprites;
     public GameObject tileBackground;
-    public GameObject cursorPrefab; // Visual indicator for the cursor
+    public GameObject cursorPrefab;
     
     [Header("Cursor Settings")]
-    public int cursorWidth = 2; // Cursor covers 2 tiles horizontally
-    public int cursorHeight = 1; // Cursor covers 1 tile vertically
+    public int cursorWidth = 2;
+    public int cursorHeight = 1;
     public Color cursorColor = new Color(1f, 1f, 1f, 0.5f);
     private bool usingPrefabCursor = false;
     
     private GameObject[,] grid;
-    private Vector2Int cursorPosition; // Left position of the 1x2 cursor
+    private GameObject[,] preloadGrid; // Extra rows below main grid
+    private Vector2Int cursorPosition;
     private GameObject cursorVisual;
-    private bool isSwapping = false; // Only blocks swapping at current cursor position
-    private HashSet<Vector2Int> processingTiles = new HashSet<Vector2Int>(); // Tracks tiles being processed
+    private bool isSwapping = false;
+    private HashSet<Vector2Int> processingTiles = new HashSet<Vector2Int>();
+    
+    private float currentGridOffset = 0f; // How much the grid has risen
+    private float nextRowSpawnOffset = 0f; // When to spawn next row
+    private bool isInGracePeriod = false;
+    private float gracePeriodTimer = 0f;
+    private bool hasBlockAtTop = false;
+    private bool gameOver = false;
     
     void Start()
     {
         grid = new GameObject[gridWidth, gridHeight];
+        preloadGrid = new GameObject[gridWidth, preloadRows];
         cursorPosition = new Vector2Int(0, gridHeight / 2);
         CreateGrid();
         CreateCursor();
-        StartCoroutine(FillGrid());
+        StartCoroutine(InitializeGrid());
     }
     
     void CreateGrid()
@@ -66,7 +84,6 @@ public class GridManager : MonoBehaviour
         }
         else
         {
-            // Create a simple cursor visual
             cursorVisual = new GameObject("Cursor");
             cursorVisual.transform.SetParent(transform);
             
@@ -82,17 +99,14 @@ public class GridManager : MonoBehaviour
     
     Sprite CreateCursorSprite()
     {
-        // Create a simple rectangular sprite for the cursor
         Texture2D tex = new Texture2D(200, 100);
         Color[] pixels = new Color[200 * 100];
         
-        // Fill with transparent
         for (int i = 0; i < pixels.Length; i++)
         {
             pixels[i] = Color.clear;
         }
         
-        // Draw border
         for (int x = 0; x < 200; x++)
         {
             for (int y = 0; y < 100; y++)
@@ -112,38 +126,48 @@ public class GridManager : MonoBehaviour
     
     void UpdateCursorPosition()
     {
-        // Center the cursor between the two tiles it covers
-        float centerX = (cursorPosition.x + 1f) * tileSize; // Position between left and right tile
-        float centerY = cursorPosition.y * tileSize;
+        float centerX = (cursorPosition.x + 1f) * tileSize;
+        float centerY = cursorPosition.y * tileSize + currentGridOffset;
         cursorVisual.transform.position = new Vector3(centerX - 0.5f * tileSize, centerY, -1f);
 
         if(!usingPrefabCursor)
         {
-            // Scale to cover exactly 2 tiles wide and 1 tile tall
             cursorVisual.transform.localScale = new Vector3(cursorWidth * tileSize, cursorHeight * tileSize, 1f);
         }
     }
     
-    IEnumerator FillGrid()
+    IEnumerator InitializeGrid()
     {
-        for (int x = 0; x < gridWidth; x++)
+        // Fill preload rows (below visible grid)
+        for (int y = 0; y < preloadRows; y++)
         {
-            for (int y = 0; y < gridHeight; y++)
+            for (int x = 0; x < gridWidth; x++)
             {
-                if (grid[x, y] == null)
-                {
-                    SpawnTile(x, y);
-                    yield return new WaitForSeconds(0.05f);
-                }
+                SpawnPreloadTile(x, y);
+                yield return new WaitForSeconds(0.01f);
             }
         }
         
+        // Fill bottom rows of main grid
+        for (int y = 0; y < initialFillRows; y++)
+        {
+            for (int x = 0; x < gridWidth; x++)
+            {
+                SpawnTile(x, y);
+                yield return new WaitForSeconds(0.02f);
+            }
+        }
+        
+        // Check for initial matches
         yield return StartCoroutine(CheckAndClearMatches());
+        
+        // Start rising
+        StartCoroutine(RiseGrid());
     }
     
     void SpawnTile(int x, int y)
     {
-        Vector3 pos = new Vector3(x * tileSize, y * tileSize, 0);
+        Vector3 pos = new Vector3(x * tileSize, y * tileSize + currentGridOffset, 0);
         int randomIndex = Random.Range(0, tileSprites.Length);
         GameObject tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
         
@@ -154,11 +178,229 @@ public class GridManager : MonoBehaviour
         tileScript.Initialize(x, y, randomIndex, this);
         
         grid[x, y] = tile;
+        
+        // Check if tile should be active (66% visible = y position + offset >= -0.33 tiles)
+        UpdateTileActiveState(tile, y);
+    }
+    
+    void SpawnPreloadTile(int x, int y)
+    {
+        // Preload tiles spawn at negative Y positions
+        Vector3 pos = new Vector3(x * tileSize, (y - preloadRows) * tileSize + currentGridOffset, 0);
+        int randomIndex = Random.Range(0, tileSprites.Length);
+        GameObject tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
+        
+        SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+        sr.sprite = tileSprites[randomIndex];
+        sr.color = Color.gray; // Start as grayscale
+        
+        Tile tileScript = tile.GetComponent<Tile>();
+        tileScript.Initialize(x, y - preloadRows, randomIndex, this);
+        
+        preloadGrid[x, y] = tile;
+    }
+    
+    void UpdateTileActiveState(GameObject tile, int gridY)
+    {
+        if (tile == null) return;
+        
+        float worldY = gridY * tileSize + currentGridOffset;
+        float visibilityThreshold = -0.33f * tileSize; // 66% visible = 33% below y=0
+        
+        SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+        if (worldY >= visibilityThreshold)
+        {
+            // Active - full color
+            sr.color = Color.white;
+        }
+        else
+        {
+            // Inactive - grayscale
+            sr.color = Color.gray;
+        }
+    }
+    
+    void SpawnRowAtBottom()
+    {
+        // Shift all tiles up one row in grid array
+        for (int x = 0; x < gridWidth; x++)
+        {
+            for (int y = gridHeight - 1; y > 0; y--)
+            {
+                grid[x, y] = grid[x, y - 1];
+                if (grid[x, y] != null)
+                {
+                    Tile tile = grid[x, y].GetComponent<Tile>();
+                    tile.Initialize(x, y, tile.TileType, this);
+                    UpdateTileActiveState(grid[x, y], y);
+                }
+            }
+            
+            // Move preload tile into main grid at y=0
+            if (preloadGrid[x, preloadRows - 1] != null)
+            {
+                GameObject tile = preloadGrid[x, preloadRows - 1];
+                grid[x, 0] = tile;
+                Tile tileScript = tile.GetComponent<Tile>();
+                tileScript.Initialize(x, 0, tileScript.TileType, this);
+                UpdateTileActiveState(tile, 0);
+            }
+            
+            // Shift preload tiles up
+            for (int py = preloadRows - 1; py > 0; py--)
+            {
+                preloadGrid[x, py] = preloadGrid[x, py - 1];
+                if (preloadGrid[x, py] != null)
+                {
+                    Tile tile = preloadGrid[x, py].GetComponent<Tile>();
+                    tile.Initialize(x, py - preloadRows, tile.TileType, this);
+                }
+            }
+            
+            // Spawn new preload tile at bottom
+            SpawnPreloadTile(x, 0);
+        }
+    }
+    
+    IEnumerator RiseGrid()
+    {
+        while (!gameOver)
+        {
+            if (!isInGracePeriod)
+            {
+                // X (primary) or L (alternate) to speed up rising
+                float riseSpeed = (Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L)) ? fastRiseSpeed : normalRiseSpeed;
+                float riseAmount = riseSpeed * Time.deltaTime;
+                
+                currentGridOffset += riseAmount;
+                nextRowSpawnOffset += riseAmount;
+                
+                // Update all tile positions
+                foreach (GameObject tile in grid)
+                {
+                    if (tile != null)
+                    {
+                        Tile tileScript = tile.GetComponent<Tile>();
+                        tile.transform.position = new Vector3(
+                            tileScript.GridX * tileSize,
+                            tileScript.GridY * tileSize + currentGridOffset,
+                            0
+                        );
+                        UpdateTileActiveState(tile, tileScript.GridY);
+                    }
+                }
+                
+                // Update preload tile positions
+                foreach (GameObject tile in preloadGrid)
+                {
+                    if (tile != null)
+                    {
+                        Tile tileScript = tile.GetComponent<Tile>();
+                        tile.transform.position = new Vector3(
+                            tileScript.GridX * tileSize,
+                            tileScript.GridY * tileSize + currentGridOffset,
+                            0
+                        );
+                        UpdateTileActiveState(tile, tileScript.GridY);
+                    }
+                }
+                
+                UpdateCursorPosition();
+                
+                // Spawn new row when grid has risen one tile height
+                if (nextRowSpawnOffset >= tileSize)
+                {
+                    nextRowSpawnOffset -= tileSize;
+                    currentGridOffset -= tileSize;
+                    SpawnRowAtBottom();
+                    
+                    // Update positions after spawn
+                    foreach (GameObject tile in grid)
+                    {
+                        if (tile != null)
+                        {
+                            Tile tileScript = tile.GetComponent<Tile>();
+                            tile.transform.position = new Vector3(
+                                tileScript.GridX * tileSize,
+                                tileScript.GridY * tileSize + currentGridOffset,
+                                0
+                            );
+                            UpdateTileActiveState(tile, tileScript.GridY);
+                        }
+                    }
+                    
+                    // Update preload tile positions
+                    foreach (GameObject tile in preloadGrid)
+                    {
+                        if (tile != null)
+                        {
+                            Tile tileScript = tile.GetComponent<Tile>();
+                            tile.transform.position = new Vector3(
+                                tileScript.GridX * tileSize,
+                                tileScript.GridY * tileSize + currentGridOffset,
+                                0
+                            );
+                            UpdateTileActiveState(tile, tileScript.GridY);
+                        }
+                    }
+                }
+                
+                // Check if any block reached the top
+                CheckTopRow();
+            }
+            else
+            {
+                // Grace period countdown
+                gracePeriodTimer -= Time.deltaTime;
+                Debug.Log($"Grace Period: {gracePeriodTimer:F2}s remaining!");
+                
+                if (gracePeriodTimer <= 0f)
+                {
+                    GameOver();
+                }
+                else if (!hasBlockAtTop)
+                {
+                    // Block was cleared, exit grace period
+                    isInGracePeriod = false;
+                    Debug.Log("Grace period ended - blocks cleared!");
+                }
+            }
+            
+            yield return null;
+        }
+    }
+    
+    void CheckTopRow()
+    {
+        hasBlockAtTop = false;
+        for (int x = 0; x < gridWidth; x++)
+        {
+            if (grid[x, gridHeight - 1] != null)
+            {
+                hasBlockAtTop = true;
+                if (!isInGracePeriod)
+                {
+                    isInGracePeriod = true;
+                    gracePeriodTimer = gracePeriod;
+                    Debug.Log("WARNING: Block reached the top! Grace period started!");
+                }
+                break;
+            }
+        }
+    }
+    
+    void GameOver()
+    {
+        gameOver = true;
+        Debug.Log("GAME OVER! Blocks reached the top!");
+        // TODO: Show game over screen, stop all gameplay
     }
     
     void Update()
     {
-        // Cursor movement (always allowed)
+        if (gameOver) return;
+        
+        // Cursor movement - Arrow Keys (primary) or WASD (alternate)
         if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
         {
             MoveCursor(-1, 0);
@@ -176,8 +418,8 @@ public class GridManager : MonoBehaviour
             MoveCursor(0, -1);
         }
         
-        // Swap tiles (check if tiles are being processed)
-        if (!isSwapping && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return)))
+        // Swap with Z (primary), K (alternate), or Space
+        if (!isSwapping && (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Space)))
         {
             int leftX = cursorPosition.x;
             int rightX = cursorPosition.x + 1;
@@ -214,11 +456,9 @@ public class GridManager : MonoBehaviour
         GameObject leftTile = grid[leftX, y];
         GameObject rightTile = grid[rightX, y];
         
-        // Swap in grid
         grid[leftX, y] = rightTile;
         grid[rightX, y] = leftTile;
         
-        // Update tile data and animate
         if (leftTile != null)
         {
             leftTile.GetComponent<Tile>().Initialize(rightX, y, leftTile.GetComponent<Tile>().TileType, this);
@@ -233,12 +473,10 @@ public class GridManager : MonoBehaviour
         
         yield return new WaitForSeconds(0.2f);
         
-        // Check only the immediate area for matches
         List<GameObject> matches = GetMatchesInArea(leftX - 2, rightX + 2, y - 2, y + 2);
         
         if (matches.Count > 0)
         {
-            // Start a separate coroutine to process these matches
             StartCoroutine(ProcessMatches(matches));
         }
         
@@ -249,7 +487,7 @@ public class GridManager : MonoBehaviour
     {
         if (tile == null) yield break;
         
-        Vector3 targetWorldPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize, 0);
+        Vector3 targetWorldPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize + currentGridOffset, 0);
         float duration = 0.2f;
         float elapsed = 0;
         Vector3 startPos = tile.transform.position;
@@ -267,11 +505,9 @@ public class GridManager : MonoBehaviour
     IEnumerator CheckAndClearMatches()
     {
         List<GameObject> allMatches = GetAllMatches();
-        Debug.Log($"Found {allMatches.Count} matched tiles.");
         
         while (allMatches.Count > 0)
         {
-            // Mark tiles as being processed
             foreach (GameObject tile in allMatches)
             {
                 if (tile != null)
@@ -281,13 +517,10 @@ public class GridManager : MonoBehaviour
                 }
             }
             
-            // Blink matched tiles
             yield return StartCoroutine(BlinkTiles(allMatches, processMatchDuration));
             
-            // Add score for matched tiles
             if (scoreManager != null)
             {
-                Debug.Log($"Matched {allMatches.Count} tiles.");
                 scoreManager.AddScore(allMatches.Count);
             }
             
@@ -305,13 +538,11 @@ public class GridManager : MonoBehaviour
             yield return StartCoroutine(DropTiles());
             yield return StartCoroutine(FillEmptySpaces());
             
-            // Clear processing tiles before checking for new matches
             processingTiles.Clear();
             
             allMatches = GetAllMatches();
         }
         
-        // Reset combo when no more matches found
         if (scoreManager != null)
         {
             scoreManager.ResetCombo();
@@ -322,7 +553,6 @@ public class GridManager : MonoBehaviour
     {
         if (matches.Count == 0) yield break;
         
-        // Mark tiles as being processed
         foreach (GameObject tile in matches)
         {
             if (tile != null)
@@ -332,13 +562,10 @@ public class GridManager : MonoBehaviour
             }
         }
         
-        // Blink matched tiles
         yield return StartCoroutine(BlinkTiles(matches, processMatchDuration));
         
-        // Add score for matched tiles
         if (scoreManager != null)
         {
-            Debug.Log($"Matched {matches.Count} tiles.");
             scoreManager.AddScore(matches.Count);
         }
         
@@ -356,10 +583,8 @@ public class GridManager : MonoBehaviour
         yield return StartCoroutine(DropTiles());
         yield return StartCoroutine(FillEmptySpaces());
         
-        // Clear processing tiles
         processingTiles.Clear();
         
-        // Check for cascade matches in the affected area
         List<GameObject> cascadeMatches = GetAllMatches();
         if (cascadeMatches.Count > 0)
         {
@@ -367,7 +592,6 @@ public class GridManager : MonoBehaviour
         }
         else
         {
-            // Only reset combo if no more cascades
             if (scoreManager != null)
             {
                 scoreManager.ResetCombo();
@@ -403,51 +627,6 @@ public class GridManager : MonoBehaviour
         yield return new WaitForSeconds(0.3f);
     }
     
-    IEnumerator BlinkTiles(List<GameObject> tiles, float duration)
-    {
-        float elapsed = 0f;
-        bool isVisible = true;
-        
-        // Store original SpriteRenderers
-        List<SpriteRenderer> spriteRenderers = new List<SpriteRenderer>();
-        foreach (GameObject tile in tiles)
-        {
-            if (tile != null)
-            {
-                SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
-                if (sr != null)
-                {
-                    spriteRenderers.Add(sr);
-                }
-            }
-        }
-        
-        while (elapsed < duration)
-        {
-            // Toggle visibility
-            isVisible = !isVisible;
-            foreach (SpriteRenderer sr in spriteRenderers)
-            {
-                if (sr != null)
-                {
-                    sr.enabled = isVisible;
-                }
-            }
-            
-            yield return new WaitForSeconds(blinkSpeed);
-            elapsed += blinkSpeed;
-        }
-        
-        // Ensure all tiles are visible at the end
-        foreach (SpriteRenderer sr in spriteRenderers)
-        {
-            if (sr != null)
-            {
-                sr.enabled = true;
-            }
-        }
-    }
-    
     IEnumerator FillEmptySpaces()
     {
         for (int x = 0; x < gridWidth; x++)
@@ -463,17 +642,62 @@ public class GridManager : MonoBehaviour
         }
     }
     
+    IEnumerator BlinkTiles(List<GameObject> tiles, float duration)
+    {
+        float elapsed = 0f;
+        bool isVisible = true;
+        
+        List<SpriteRenderer> spriteRenderers = new List<SpriteRenderer>();
+        foreach (GameObject tile in tiles)
+        {
+            if (tile != null)
+            {
+                SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+                if (sr != null)
+                {
+                    spriteRenderers.Add(sr);
+                }
+            }
+        }
+        
+        while (elapsed < duration)
+        {
+            isVisible = !isVisible;
+            foreach (SpriteRenderer sr in spriteRenderers)
+            {
+                if (sr != null)
+                {
+                    sr.enabled = isVisible;
+                }
+            }
+            
+            yield return new WaitForSeconds(blinkSpeed);
+            elapsed += blinkSpeed;
+        }
+        
+        foreach (SpriteRenderer sr in spriteRenderers)
+        {
+            if (sr != null)
+            {
+                sr.enabled = true;
+            }
+        }
+    }
+    
     List<GameObject> GetAllMatches()
     {
         HashSet<GameObject> matches = new HashSet<GameObject>();
         
-        // Check horizontal matches
         for (int y = 0; y < gridHeight; y++)
         {
             for (int x = 0; x < gridWidth - 2; x++)
             {
                 if (grid[x, y] != null && grid[x + 1, y] != null && grid[x + 2, y] != null)
                 {
+                    // Only match if tiles are active (66% visible)
+                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x + 1, y]) || !IsTileActive(grid[x + 2, y]))
+                        continue;
+                    
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x + 1, y].GetComponent<Tile>().TileType;
                     int type3 = grid[x + 2, y].GetComponent<Tile>().TileType;
@@ -488,13 +712,16 @@ public class GridManager : MonoBehaviour
             }
         }
         
-        // Check vertical matches
         for (int x = 0; x < gridWidth; x++)
         {
             for (int y = 0; y < gridHeight - 2; y++)
             {
                 if (grid[x, y] != null && grid[x, y + 1] != null && grid[x, y + 2] != null)
                 {
+                    // Only match if tiles are active (66% visible)
+                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x, y + 1]) || !IsTileActive(grid[x, y + 2]))
+                        continue;
+                    
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x, y + 1].GetComponent<Tile>().TileType;
                     int type3 = grid[x, y + 2].GetComponent<Tile>().TileType;
@@ -516,19 +743,21 @@ public class GridManager : MonoBehaviour
     {
         HashSet<GameObject> matches = new HashSet<GameObject>();
         
-        // Clamp to grid bounds
         minX = Mathf.Max(0, minX);
         maxX = Mathf.Min(gridWidth - 1, maxX);
         minY = Mathf.Max(0, minY);
         maxY = Mathf.Min(gridHeight - 1, maxY);
         
-        // Check horizontal matches in area
         for (int y = minY; y <= maxY; y++)
         {
             for (int x = minX; x <= maxX - 2; x++)
             {
                 if (grid[x, y] != null && grid[x + 1, y] != null && grid[x + 2, y] != null)
                 {
+                    // Only match if tiles are active (66% visible)
+                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x + 1, y]) || !IsTileActive(grid[x + 2, y]))
+                        continue;
+                    
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x + 1, y].GetComponent<Tile>().TileType;
                     int type3 = grid[x + 2, y].GetComponent<Tile>().TileType;
@@ -543,13 +772,16 @@ public class GridManager : MonoBehaviour
             }
         }
         
-        // Check vertical matches in area
         for (int x = minX; x <= maxX; x++)
         {
             for (int y = minY; y <= maxY - 2; y++)
             {
                 if (grid[x, y] != null && grid[x, y + 1] != null && grid[x, y + 2] != null)
                 {
+                    // Only match if tiles are active (66% visible)
+                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x, y + 1]) || !IsTileActive(grid[x, y + 2]))
+                        continue;
+                    
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x, y + 1].GetComponent<Tile>().TileType;
                     int type3 = grid[x, y + 2].GetComponent<Tile>().TileType;
@@ -565,6 +797,17 @@ public class GridManager : MonoBehaviour
         }
         
         return new List<GameObject>(matches);
+    }
+    
+    bool IsTileActive(GameObject tile)
+    {
+        if (tile == null) return false;
+        
+        Tile tileScript = tile.GetComponent<Tile>();
+        float worldY = tileScript.GridY * tileSize + currentGridOffset;
+        float visibilityThreshold = -0.33f * tileSize; // 66% visible
+        
+        return worldY >= visibilityThreshold;
     }
     
     bool IsTileBeingProcessed(int x, int y)
