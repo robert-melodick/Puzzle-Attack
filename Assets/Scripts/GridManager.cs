@@ -40,12 +40,13 @@ public class GridManager : MonoBehaviour
     private Vector2Int cursorPosition;
     private GameObject cursorVisual;
     private bool isSwapping = false;
+    private bool isProcessingMatches = false;
     private HashSet<Vector2Int> processingTiles = new HashSet<Vector2Int>();
     
     private float currentGridOffset = 0f; // How much the grid has risen
     private float nextRowSpawnOffset = 0f; // When to spawn next row
     private bool isInGracePeriod = false;
-    private float gracePeriodTimer = 0f;
+    private float gracePeriodTimer = 1.5f;
     private bool hasBlockAtTop = false;
     private bool gameOver = false;
     
@@ -122,18 +123,6 @@ public class GridManager : MonoBehaviour
         tex.Apply();
         
         return Sprite.Create(tex, new Rect(0, 0, 200, 100), new Vector2(0.5f, 0.5f), 100);
-    }
-    
-    void UpdateCursorPosition()
-    {
-        float centerX = (cursorPosition.x + 1f) * tileSize;
-        float centerY = cursorPosition.y * tileSize + currentGridOffset;
-        cursorVisual.transform.position = new Vector3(centerX - 0.5f * tileSize, centerY, -1f);
-
-        if(!usingPrefabCursor)
-        {
-            cursorVisual.transform.localScale = new Vector3(cursorWidth * tileSize, cursorHeight * tileSize, 1f);
-        }
     }
     
     IEnumerator InitializeGrid()
@@ -235,7 +224,7 @@ public class GridManager : MonoBehaviour
                     UpdateTileActiveState(grid[x, y], y);
                 }
             }
-            
+
             // Move preload tile into main grid at y=0
             if (preloadGrid[x, preloadRows - 1] != null)
             {
@@ -245,7 +234,7 @@ public class GridManager : MonoBehaviour
                 tileScript.Initialize(x, 0, tileScript.TileType, this);
                 UpdateTileActiveState(tile, 0);
             }
-            
+
             // Shift preload tiles up
             for (int py = preloadRows - 1; py > 0; py--)
             {
@@ -256,17 +245,20 @@ public class GridManager : MonoBehaviour
                     tile.Initialize(x, py - preloadRows, tile.TileType, this);
                 }
             }
-            
+
             // Spawn new preload tile at bottom
             SpawnPreloadTile(x, 0);
         }
+
+        // Shift cursor up in grid coordinates to maintain world position
+        cursorPosition.y = Mathf.Min(cursorPosition.y + 1, gridHeight - 1);
     }
     
     IEnumerator RiseGrid()
     {
         while (!gameOver)
         {
-            if (!isInGracePeriod)
+            if (!isInGracePeriod && !isProcessingMatches)
             {
                 // X (primary) or L (alternate) to speed up rising
                 float riseSpeed = (Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L)) ? fastRiseSpeed : normalRiseSpeed;
@@ -348,7 +340,7 @@ public class GridManager : MonoBehaviour
                 // Check if any block reached the top
                 CheckTopRow();
             }
-            else
+            else if (isInGracePeriod)
             {
                 // Grace period countdown
                 gracePeriodTimer -= Time.deltaTime;
@@ -373,18 +365,28 @@ public class GridManager : MonoBehaviour
     void CheckTopRow()
     {
         hasBlockAtTop = false;
+        
+        // Check if any tile in the top row is at or above the danger threshold
         for (int x = 0; x < gridWidth; x++)
         {
             if (grid[x, gridHeight - 1] != null)
             {
-                hasBlockAtTop = true;
-                if (!isInGracePeriod)
+                // Calculate the actual world position of the top row
+                float topRowWorldY = (gridHeight - 1) * tileSize + currentGridOffset;
+                
+                // Only trigger grace period if top row is actually at the top of the screen
+                // (gridHeight - 1) * tileSize is the maximum allowed position
+                if (topRowWorldY >= (gridHeight - 1) * tileSize)
                 {
-                    isInGracePeriod = true;
-                    gracePeriodTimer = gracePeriod;
-                    Debug.Log("WARNING: Block reached the top! Grace period started!");
+                    hasBlockAtTop = true;
+                    if (!isInGracePeriod)
+                    {
+                        isInGracePeriod = true;
+                        gracePeriodTimer = gracePeriod;
+                        Debug.Log("WARNING: Block reached the top! Grace period started!");
+                    }
+                    break;
                 }
-                break;
             }
         }
     }
@@ -443,6 +445,18 @@ public class GridManager : MonoBehaviour
         
         cursorPosition = new Vector2Int(newX, newY);
         UpdateCursorPosition();
+    }
+    
+    void UpdateCursorPosition()
+    {
+        float centerX = (cursorPosition.x + 1f) * tileSize;
+        float centerY = cursorPosition.y * tileSize + currentGridOffset;
+        cursorVisual.transform.position = new Vector3(centerX - 0.5f * tileSize, centerY, -1f);
+
+        if(!usingPrefabCursor)
+        {
+            cursorVisual.transform.localScale = new Vector3(cursorWidth * tileSize, cursorHeight * tileSize, 1f);
+        }
     }
     
     IEnumerator SwapCursorTiles()
@@ -504,8 +518,9 @@ public class GridManager : MonoBehaviour
     
     IEnumerator CheckAndClearMatches()
     {
+        isProcessingMatches = true;
         List<GameObject> allMatches = GetAllMatches();
-        
+
         while (allMatches.Count > 0)
         {
             foreach (GameObject tile in allMatches)
@@ -536,10 +551,9 @@ public class GridManager : MonoBehaviour
             
             yield return new WaitForSeconds(0.1f);
             yield return StartCoroutine(DropTiles());
-            yield return StartCoroutine(FillEmptySpaces());
-            
+
             processingTiles.Clear();
-            
+
             allMatches = GetAllMatches();
         }
         
@@ -547,12 +561,16 @@ public class GridManager : MonoBehaviour
         {
             scoreManager.ResetCombo();
         }
+
+        isProcessingMatches = false;
     }
-    
+
     IEnumerator ProcessMatches(List<GameObject> matches)
     {
         if (matches.Count == 0) yield break;
-        
+
+        isProcessingMatches = true;
+
         foreach (GameObject tile in matches)
         {
             if (tile != null)
@@ -581,10 +599,9 @@ public class GridManager : MonoBehaviour
         
         yield return new WaitForSeconds(0.1f);
         yield return StartCoroutine(DropTiles());
-        yield return StartCoroutine(FillEmptySpaces());
-        
+
         processingTiles.Clear();
-        
+
         List<GameObject> cascadeMatches = GetAllMatches();
         if (cascadeMatches.Count > 0)
         {
@@ -596,6 +613,7 @@ public class GridManager : MonoBehaviour
             {
                 scoreManager.ResetCombo();
             }
+            isProcessingMatches = false;
         }
     }
     
