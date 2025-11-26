@@ -497,23 +497,32 @@ public class GridManager : MonoBehaviour
         isSwapping = false;
     }
     
-    IEnumerator MoveTile(GameObject tile, Vector2Int targetPos)
+    IEnumerator MoveTile(GameObject tile, Vector2Int targetPos, bool playLandSound = false)
     {
         if (tile == null) yield break;
-        
+
         Vector3 targetWorldPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize + currentGridOffset, 0);
         float duration = 0.2f;
         float elapsed = 0;
         Vector3 startPos = tile.transform.position;
-        
+
         while (elapsed < duration)
         {
             tile.transform.position = Vector3.Lerp(startPos, targetWorldPos, elapsed / duration);
             elapsed += Time.deltaTime;
             yield return null;
         }
-        
+
         tile.transform.position = targetWorldPos;
+
+        if (playLandSound)
+        {
+            Tile tileScript = tile.GetComponent<Tile>();
+            if (tileScript != null)
+            {
+                tileScript.PlayLandSound();
+            }
+        }
     }
     
     IEnumerator CheckAndClearMatches()
@@ -531,14 +540,30 @@ public class GridManager : MonoBehaviour
                     processingTiles.Add(new Vector2Int(tileScript.GridX, tileScript.GridY));
                 }
             }
-            
+
             yield return StartCoroutine(BlinkTiles(allMatches, processMatchDuration));
-            
+
+            // Get the current combo (next combo will be currentCombo + 1)
+            int nextCombo = scoreManager != null ? scoreManager.GetCombo() + 1 : 1;
+
+            // Play match sound for matched tiles with pitch based on combo
+            foreach (GameObject tile in allMatches)
+            {
+                if (tile != null)
+                {
+                    Tile tileScript = tile.GetComponent<Tile>();
+                    if (tileScript != null)
+                    {
+                        tileScript.PlayMatchSound(nextCombo);
+                    }
+                }
+            }
+
             if (scoreManager != null)
             {
                 scoreManager.AddScore(allMatches.Count);
             }
-            
+
             foreach (GameObject tile in allMatches)
             {
                 if (tile != null)
@@ -548,7 +573,7 @@ public class GridManager : MonoBehaviour
                     Destroy(tile);
                 }
             }
-            
+
             yield return new WaitForSeconds(0.1f);
             yield return StartCoroutine(DropTiles());
 
@@ -556,7 +581,7 @@ public class GridManager : MonoBehaviour
 
             allMatches = GetAllMatches();
         }
-        
+
         if (scoreManager != null)
         {
             scoreManager.ResetCombo();
@@ -579,14 +604,30 @@ public class GridManager : MonoBehaviour
                 processingTiles.Add(new Vector2Int(tileScript.GridX, tileScript.GridY));
             }
         }
-        
+
         yield return StartCoroutine(BlinkTiles(matches, processMatchDuration));
-        
+
+        // Get the current combo (next combo will be currentCombo + 1)
+        int nextCombo = scoreManager != null ? scoreManager.GetCombo() + 1 : 1;
+
+        // Play match sound for matched tiles with pitch based on combo
+        foreach (GameObject tile in matches)
+        {
+            if (tile != null)
+            {
+                Tile tileScript = tile.GetComponent<Tile>();
+                if (tileScript != null)
+                {
+                    tileScript.PlayMatchSound(nextCombo);
+                }
+            }
+        }
+
         if (scoreManager != null)
         {
             scoreManager.AddScore(matches.Count);
         }
-        
+
         foreach (GameObject tile in matches)
         {
             if (tile != null)
@@ -596,7 +637,7 @@ public class GridManager : MonoBehaviour
                 Destroy(tile);
             }
         }
-        
+
         yield return new WaitForSeconds(0.1f);
         yield return StartCoroutine(DropTiles());
 
@@ -631,17 +672,17 @@ public class GridManager : MonoBehaviour
                         {
                             grid[x, y] = grid[x, aboveY];
                             grid[x, aboveY] = null;
-                            
+
                             Tile tile = grid[x, y].GetComponent<Tile>();
                             tile.Initialize(x, y, tile.TileType, this);
-                            StartCoroutine(MoveTile(grid[x, y], new Vector2Int(x, y)));
+                            StartCoroutine(MoveTile(grid[x, y], new Vector2Int(x, y), true));
                             break;
                         }
                     }
                 }
             }
         }
-        
+
         yield return new WaitForSeconds(0.3f);
     }
     
