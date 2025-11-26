@@ -21,6 +21,7 @@ public class GridManager : MonoBehaviour
     [Header("Match Processing")]
     public float processMatchDuration = 1.5f;
     public float blinkSpeed = 0.15f;
+    public float delayBetweenPops = 1.5f; // Time between each tile popping in sequence
     
     [Header("Prefabs")]
     public ScoreManager scoreManager;
@@ -462,38 +463,42 @@ public class GridManager : MonoBehaviour
     IEnumerator SwapCursorTiles()
     {
         isSwapping = true;
-        
+
         int leftX = cursorPosition.x;
         int rightX = cursorPosition.x + 1;
         int y = cursorPosition.y;
-        
+
         GameObject leftTile = grid[leftX, y];
         GameObject rightTile = grid[rightX, y];
-        
+
         grid[leftX, y] = rightTile;
         grid[rightX, y] = leftTile;
-        
+
         if (leftTile != null)
         {
             leftTile.GetComponent<Tile>().Initialize(rightX, y, leftTile.GetComponent<Tile>().TileType, this);
             StartCoroutine(MoveTile(leftTile, new Vector2Int(rightX, y)));
         }
-        
+
         if (rightTile != null)
         {
             rightTile.GetComponent<Tile>().Initialize(leftX, y, rightTile.GetComponent<Tile>().TileType, this);
             StartCoroutine(MoveTile(rightTile, new Vector2Int(leftX, y)));
         }
-        
+
         yield return new WaitForSeconds(0.2f);
-        
+
+        // Drop any tiles that can fall after swap
+        yield return StartCoroutine(DropTiles());
+
+        // Then check for matches
         List<GameObject> matches = GetMatchesInArea(leftX - 2, rightX + 2, y - 2, y + 2);
-        
+
         if (matches.Count > 0)
         {
             StartCoroutine(ProcessMatches(matches));
         }
-        
+
         isSwapping = false;
     }
     
@@ -528,50 +533,56 @@ public class GridManager : MonoBehaviour
     IEnumerator CheckAndClearMatches()
     {
         isProcessingMatches = true;
-        List<GameObject> allMatches = GetAllMatches();
+        List<List<GameObject>> matchGroups = GetMatchGroups();
 
-        while (allMatches.Count > 0)
+        while (matchGroups.Count > 0)
         {
-            foreach (GameObject tile in allMatches)
+            // Flatten all groups to mark tiles as processing
+            foreach (List<GameObject> group in matchGroups)
             {
-                if (tile != null)
+                foreach (GameObject tile in group)
                 {
-                    Tile tileScript = tile.GetComponent<Tile>();
-                    processingTiles.Add(new Vector2Int(tileScript.GridX, tileScript.GridY));
-                }
-            }
-
-            yield return StartCoroutine(BlinkTiles(allMatches, processMatchDuration));
-
-            // Get the current combo (next combo will be currentCombo + 1)
-            int nextCombo = scoreManager != null ? scoreManager.GetCombo() + 1 : 1;
-
-            // Play match sound for matched tiles with pitch based on combo
-            foreach (GameObject tile in allMatches)
-            {
-                if (tile != null)
-                {
-                    Tile tileScript = tile.GetComponent<Tile>();
-                    if (tileScript != null)
+                    if (tile != null)
                     {
-                        tileScript.PlayMatchSound(nextCombo);
+                        Tile tileScript = tile.GetComponent<Tile>();
+                        processingTiles.Add(new Vector2Int(tileScript.GridX, tileScript.GridY));
                     }
                 }
             }
 
-            if (scoreManager != null)
+            // Flatten for blinking
+            List<GameObject> allMatchedTiles = new List<GameObject>();
+            foreach (List<GameObject> group in matchGroups)
             {
-                scoreManager.AddScore(allMatches.Count);
+                allMatchedTiles.AddRange(group);
             }
 
-            foreach (GameObject tile in allMatches)
+            yield return StartCoroutine(BlinkTiles(allMatchedTiles, processMatchDuration));
+
+            // Get the current combo for all groups
+            int currentCombo = scoreManager != null ? scoreManager.GetCombo() : 0;
+
+            // Score and pop each group
+            List<Coroutine> popCoroutines = new List<Coroutine>();
+            for (int i = 0; i < matchGroups.Count; i++)
             {
-                if (tile != null)
+                List<GameObject> group = matchGroups[i];
+
+                // Each group increments the combo
+                if (scoreManager != null)
                 {
-                    Tile tileScript = tile.GetComponent<Tile>();
-                    grid[tileScript.GridX, tileScript.GridY] = null;
-                    Destroy(tile);
+                    scoreManager.AddScore(group.Count);
                 }
+
+                // Start popping this group asynchronously
+                int comboForThisGroup = currentCombo + i + 1;
+                popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboForThisGroup)));
+            }
+
+            // Wait for all groups to finish popping
+            foreach (Coroutine coroutine in popCoroutines)
+            {
+                yield return coroutine;
             }
 
             yield return new WaitForSeconds(0.1f);
@@ -579,7 +590,7 @@ public class GridManager : MonoBehaviour
 
             processingTiles.Clear();
 
-            allMatches = GetAllMatches();
+            matchGroups = GetMatchGroups();
         }
 
         if (scoreManager != null)
@@ -596,46 +607,48 @@ public class GridManager : MonoBehaviour
 
         isProcessingMatches = true;
 
-        foreach (GameObject tile in matches)
+        // Group the matches into separate connected groups
+        List<List<GameObject>> matchGroups = GroupMatchedTiles(matches);
+
+        // Mark all tiles as processing
+        foreach (List<GameObject> group in matchGroups)
         {
-            if (tile != null)
+            foreach (GameObject tile in group)
             {
-                Tile tileScript = tile.GetComponent<Tile>();
-                processingTiles.Add(new Vector2Int(tileScript.GridX, tileScript.GridY));
+                if (tile != null)
+                {
+                    Tile tileScript = tile.GetComponent<Tile>();
+                    processingTiles.Add(new Vector2Int(tileScript.GridX, tileScript.GridY));
+                }
             }
         }
 
         yield return StartCoroutine(BlinkTiles(matches, processMatchDuration));
 
-        // Get the current combo (next combo will be currentCombo + 1)
-        int nextCombo = scoreManager != null ? scoreManager.GetCombo() + 1 : 1;
+        // Get the current combo for all groups
+        int currentCombo = scoreManager != null ? scoreManager.GetCombo() : 0;
 
-        // Play match sound for matched tiles with pitch based on combo
-        foreach (GameObject tile in matches)
+        // Score and pop each group
+        List<Coroutine> popCoroutines = new List<Coroutine>();
+        for (int i = 0; i < matchGroups.Count; i++)
         {
-            if (tile != null)
+            List<GameObject> group = matchGroups[i];
+
+            // Each group increments the combo
+            if (scoreManager != null)
             {
-                Tile tileScript = tile.GetComponent<Tile>();
-                if (tileScript != null)
-                {
-                    tileScript.PlayMatchSound(nextCombo);
-                }
+                scoreManager.AddScore(group.Count);
             }
+
+            // Start popping this group asynchronously
+            int comboForThisGroup = currentCombo + i + 1;
+            popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboForThisGroup)));
         }
 
-        if (scoreManager != null)
+        // Wait for all groups to finish popping
+        foreach (Coroutine coroutine in popCoroutines)
         {
-            scoreManager.AddScore(matches.Count);
-        }
-
-        foreach (GameObject tile in matches)
-        {
-            if (tile != null)
-            {
-                Tile tileScript = tile.GetComponent<Tile>();
-                grid[tileScript.GridX, tileScript.GridY] = null;
-                Destroy(tile);
-            }
+            yield return coroutine;
         }
 
         yield return new WaitForSeconds(0.1f);
@@ -643,9 +656,15 @@ public class GridManager : MonoBehaviour
 
         processingTiles.Clear();
 
-        List<GameObject> cascadeMatches = GetAllMatches();
-        if (cascadeMatches.Count > 0)
+        List<List<GameObject>> cascadeMatchGroups = GetMatchGroups();
+        if (cascadeMatchGroups.Count > 0)
         {
+            // Flatten and recurse
+            List<GameObject> cascadeMatches = new List<GameObject>();
+            foreach (List<GameObject> group in cascadeMatchGroups)
+            {
+                cascadeMatches.AddRange(group);
+            }
             yield return StartCoroutine(ProcessMatches(cascadeMatches));
         }
         else
@@ -656,6 +675,64 @@ public class GridManager : MonoBehaviour
             }
             isProcessingMatches = false;
         }
+    }
+
+    List<List<GameObject>> GroupMatchedTiles(List<GameObject> matches)
+    {
+        HashSet<GameObject> allMatches = new HashSet<GameObject>(matches);
+
+        if (allMatches.Count == 0)
+            return new List<List<GameObject>>();
+
+        // Group matched tiles into separate connected groups
+        List<List<GameObject>> groups = new List<List<GameObject>>();
+        HashSet<GameObject> processed = new HashSet<GameObject>();
+
+        foreach (GameObject tile in allMatches)
+        {
+            if (processed.Contains(tile) || tile == null)
+                continue;
+
+            // Start a new group with flood fill
+            List<GameObject> group = new List<GameObject>();
+            Queue<GameObject> queue = new Queue<GameObject>();
+            queue.Enqueue(tile);
+            processed.Add(tile);
+
+            while (queue.Count > 0)
+            {
+                GameObject current = queue.Dequeue();
+                group.Add(current);
+
+                Tile currentTile = current.GetComponent<Tile>();
+
+                // Check adjacent tiles (up, down, left, right)
+                Vector2Int[] neighbors = new Vector2Int[]
+                {
+                    new Vector2Int(currentTile.GridX - 1, currentTile.GridY),
+                    new Vector2Int(currentTile.GridX + 1, currentTile.GridY),
+                    new Vector2Int(currentTile.GridX, currentTile.GridY - 1),
+                    new Vector2Int(currentTile.GridX, currentTile.GridY + 1)
+                };
+
+                foreach (Vector2Int neighborPos in neighbors)
+                {
+                    if (IsValidPosition(neighborPos.x, neighborPos.y))
+                    {
+                        GameObject neighbor = grid[neighborPos.x, neighborPos.y];
+                        if (neighbor != null && allMatches.Contains(neighbor) && !processed.Contains(neighbor))
+                        {
+                            queue.Enqueue(neighbor);
+                            processed.Add(neighbor);
+                        }
+                    }
+                }
+            }
+
+            groups.Add(group);
+        }
+
+        return groups;
     }
     
     IEnumerator DropTiles()
@@ -705,7 +782,7 @@ public class GridManager : MonoBehaviour
     {
         float elapsed = 0f;
         bool isVisible = true;
-        
+
         List<SpriteRenderer> spriteRenderers = new List<SpriteRenderer>();
         foreach (GameObject tile in tiles)
         {
@@ -718,7 +795,7 @@ public class GridManager : MonoBehaviour
                 }
             }
         }
-        
+
         while (elapsed < duration)
         {
             isVisible = !isVisible;
@@ -729,11 +806,11 @@ public class GridManager : MonoBehaviour
                     sr.enabled = isVisible;
                 }
             }
-            
+
             yield return new WaitForSeconds(blinkSpeed);
             elapsed += blinkSpeed;
         }
-        
+
         foreach (SpriteRenderer sr in spriteRenderers)
         {
             if (sr != null)
@@ -742,11 +819,43 @@ public class GridManager : MonoBehaviour
             }
         }
     }
+
+    IEnumerator PopTilesInSequence(List<GameObject> tiles, int combo)
+    {
+        foreach (GameObject tile in tiles)
+        {
+            if (tile != null)
+            {
+                Tile tileScript = tile.GetComponent<Tile>();
+                if (tileScript != null)
+                {
+                    // Play match sound for this tile
+                    tileScript.PlayMatchSound(combo);
+
+                    // Remove from grid (but don't destroy yet, so sound can play)
+                    grid[tileScript.GridX, tileScript.GridY] = null;
+
+                    // Hide the tile visually
+                    SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+                    if (sr != null)
+                    {
+                        sr.enabled = false;
+                    }
+
+                    // Wait before next tile (this gives time for sound to play)
+                    yield return new WaitForSeconds(delayBetweenPops);
+
+                    // Now destroy the tile
+                    Destroy(tile);
+                }
+            }
+        }
+    }
     
     List<GameObject> GetAllMatches()
     {
         HashSet<GameObject> matches = new HashSet<GameObject>();
-        
+
         for (int y = 0; y < gridHeight; y++)
         {
             for (int x = 0; x < gridWidth - 2; x++)
@@ -756,11 +865,11 @@ public class GridManager : MonoBehaviour
                     // Only match if tiles are active (66% visible)
                     if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x + 1, y]) || !IsTileActive(grid[x + 2, y]))
                         continue;
-                    
+
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x + 1, y].GetComponent<Tile>().TileType;
                     int type3 = grid[x + 2, y].GetComponent<Tile>().TileType;
-                    
+
                     if (type1 == type2 && type2 == type3)
                     {
                         matches.Add(grid[x, y]);
@@ -770,7 +879,7 @@ public class GridManager : MonoBehaviour
                 }
             }
         }
-        
+
         for (int x = 0; x < gridWidth; x++)
         {
             for (int y = 0; y < gridHeight - 2; y++)
@@ -780,11 +889,11 @@ public class GridManager : MonoBehaviour
                     // Only match if tiles are active (66% visible)
                     if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x, y + 1]) || !IsTileActive(grid[x, y + 2]))
                         continue;
-                    
+
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x, y + 1].GetComponent<Tile>().TileType;
                     int type3 = grid[x, y + 2].GetComponent<Tile>().TileType;
-                    
+
                     if (type1 == type2 && type2 == type3)
                     {
                         matches.Add(grid[x, y]);
@@ -794,8 +903,67 @@ public class GridManager : MonoBehaviour
                 }
             }
         }
-        
+
         return new List<GameObject>(matches);
+    }
+
+    List<List<GameObject>> GetMatchGroups()
+    {
+        // First get all matched tiles
+        HashSet<GameObject> allMatches = new HashSet<GameObject>(GetAllMatches());
+
+        if (allMatches.Count == 0)
+            return new List<List<GameObject>>();
+
+        // Group matched tiles into separate connected groups
+        List<List<GameObject>> groups = new List<List<GameObject>>();
+        HashSet<GameObject> processed = new HashSet<GameObject>();
+
+        foreach (GameObject tile in allMatches)
+        {
+            if (processed.Contains(tile) || tile == null)
+                continue;
+
+            // Start a new group with flood fill
+            List<GameObject> group = new List<GameObject>();
+            Queue<GameObject> queue = new Queue<GameObject>();
+            queue.Enqueue(tile);
+            processed.Add(tile);
+
+            while (queue.Count > 0)
+            {
+                GameObject current = queue.Dequeue();
+                group.Add(current);
+
+                Tile currentTile = current.GetComponent<Tile>();
+
+                // Check adjacent tiles (up, down, left, right)
+                Vector2Int[] neighbors = new Vector2Int[]
+                {
+                    new Vector2Int(currentTile.GridX - 1, currentTile.GridY),
+                    new Vector2Int(currentTile.GridX + 1, currentTile.GridY),
+                    new Vector2Int(currentTile.GridX, currentTile.GridY - 1),
+                    new Vector2Int(currentTile.GridX, currentTile.GridY + 1)
+                };
+
+                foreach (Vector2Int neighborPos in neighbors)
+                {
+                    if (IsValidPosition(neighborPos.x, neighborPos.y))
+                    {
+                        GameObject neighbor = grid[neighborPos.x, neighborPos.y];
+                        if (neighbor != null && allMatches.Contains(neighbor) && !processed.Contains(neighbor))
+                        {
+                            queue.Enqueue(neighbor);
+                            processed.Add(neighbor);
+                        }
+                    }
+                }
+            }
+
+            groups.Add(group);
+        }
+
+        return groups;
     }
     
     List<GameObject> GetMatchesInArea(int minX, int maxX, int minY, int maxY)

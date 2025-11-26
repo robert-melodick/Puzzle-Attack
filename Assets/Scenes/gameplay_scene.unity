@@ -158,6 +158,7 @@ MonoBehaviour:
   gracePeriod: 2
   processMatchDuration: 1.5
   blinkSpeed: 0.15
+  delayBetweenPops: 0.5
   scoreManager: {fileID: 1271421759}
   tilePrefab: {fileID: 5124203171544064163, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
   tileSprites:
@@ -820,8 +821,8 @@ Transform:
   m_GameObject: {fileID: 1998788643}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 2.9746, y: 5.9844, z: 0.056606825}
-  m_LocalScale: {x: 37.78815, y: 16.097057, z: 1}
+  m_LocalPosition: {x: 2.9745998, y: 5.9844, z: 0.056606825}
+  m_LocalScale: {x: 45.78921, y: 16.097057, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}

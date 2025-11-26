@@ -100,3 +100,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c1e08ecc02fecbe4fb235a1783c3b2ea, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  landSound: {fileID: 8300000, guid: c737aea1045a5a0438016691a3e878a0, type: 3}
+  matchSound: {fileID: 8300000, guid: 4e30c9fff33ffb14590011fb2f98e63e, type: 3}
