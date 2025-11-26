@@ -543,7 +543,10 @@ public class GridManager : MonoBehaviour
 
             yield return StartCoroutine(BlinkTiles(allMatches, processMatchDuration));
 
-            // Play match sound for matched tiles
+            // Get the current combo (next combo will be currentCombo + 1)
+            int nextCombo = scoreManager != null ? scoreManager.GetCombo() + 1 : 1;
+
+            // Play match sound for matched tiles with pitch based on combo
             foreach (GameObject tile in allMatches)
             {
                 if (tile != null)
@@ -551,7 +554,7 @@ public class GridManager : MonoBehaviour
                     Tile tileScript = tile.GetComponent<Tile>();
                     if (tileScript != null)
                     {
-                        tileScript.PlayMatchSound();
+                        tileScript.PlayMatchSound(nextCombo);
                     }
                 }
             }
@@ -604,7 +607,10 @@ public class GridManager : MonoBehaviour
 
         yield return StartCoroutine(BlinkTiles(matches, processMatchDuration));
 
-        // Play match sound for matched tiles
+        // Get the current combo (next combo will be currentCombo + 1)
+        int nextCombo = scoreManager != null ? scoreManager.GetCombo() + 1 : 1;
+
+        // Play match sound for matched tiles with pitch based on combo
         foreach (GameObject tile in matches)
         {
             if (tile != null)
@@ -612,7 +618,7 @@ public class GridManager : MonoBehaviour
                 Tile tileScript = tile.GetComponent<Tile>();
                 if (tileScript != null)
                 {
-                    tileScript.PlayMatchSound();
+                    tileScript.PlayMatchSound(nextCombo);
                 }
             }
         }
