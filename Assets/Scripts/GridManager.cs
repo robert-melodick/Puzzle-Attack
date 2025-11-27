@@ -863,10 +863,6 @@ public class GridManager : MonoBehaviour
             {
                 if (grid[x, y] != null && grid[x + 1, y] != null && grid[x + 2, y] != null)
                 {
-                    // Only match if tiles are active (66% visible)
-                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x + 1, y]) || !IsTileActive(grid[x + 2, y]))
-                        continue;
-
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x + 1, y].GetComponent<Tile>().TileType;
                     int type3 = grid[x + 2, y].GetComponent<Tile>().TileType;
@@ -887,10 +883,6 @@ public class GridManager : MonoBehaviour
             {
                 if (grid[x, y] != null && grid[x, y + 1] != null && grid[x, y + 2] != null)
                 {
-                    // Only match if tiles are active (66% visible)
-                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x, y + 1]) || !IsTileActive(grid[x, y + 2]))
-                        continue;
-
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x, y + 1].GetComponent<Tile>().TileType;
                     int type3 = grid[x, y + 2].GetComponent<Tile>().TileType;
@@ -970,26 +962,22 @@ public class GridManager : MonoBehaviour
     List<GameObject> GetMatchesInArea(int minX, int maxX, int minY, int maxY)
     {
         HashSet<GameObject> matches = new HashSet<GameObject>();
-        
+
         minX = Mathf.Max(0, minX);
         maxX = Mathf.Min(gridWidth - 1, maxX);
         minY = Mathf.Max(0, minY);
         maxY = Mathf.Min(gridHeight - 1, maxY);
-        
+
         for (int y = minY; y <= maxY; y++)
         {
             for (int x = minX; x <= maxX - 2; x++)
             {
                 if (grid[x, y] != null && grid[x + 1, y] != null && grid[x + 2, y] != null)
                 {
-                    // Only match if tiles are active (66% visible)
-                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x + 1, y]) || !IsTileActive(grid[x + 2, y]))
-                        continue;
-                    
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x + 1, y].GetComponent<Tile>().TileType;
                     int type3 = grid[x + 2, y].GetComponent<Tile>().TileType;
-                    
+
                     if (type1 == type2 && type2 == type3)
                     {
                         matches.Add(grid[x, y]);
@@ -999,21 +987,17 @@ public class GridManager : MonoBehaviour
                 }
             }
         }
-        
+
         for (int x = minX; x <= maxX; x++)
         {
             for (int y = minY; y <= maxY - 2; y++)
             {
                 if (grid[x, y] != null && grid[x, y + 1] != null && grid[x, y + 2] != null)
                 {
-                    // Only match if tiles are active (66% visible)
-                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x, y + 1]) || !IsTileActive(grid[x, y + 2]))
-                        continue;
-                    
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x, y + 1].GetComponent<Tile>().TileType;
                     int type3 = grid[x, y + 2].GetComponent<Tile>().TileType;
-                    
+
                     if (type1 == type2 && type2 == type3)
                     {
                         matches.Add(grid[x, y]);
@@ -1023,7 +1007,7 @@ public class GridManager : MonoBehaviour
                 }
             }
         }
-        
+
         return new List<GameObject>(matches);
     }
     
