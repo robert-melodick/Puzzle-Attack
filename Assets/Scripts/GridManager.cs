@@ -17,7 +17,12 @@ public class GridManager : MonoBehaviour
     public float normalRiseSpeed = 0.5f; // Units per second
     public float fastRiseSpeed = 2f; // Units per second when holding X
     public float gracePeriod = 2f; // Seconds before game over when block reaches top
-    
+
+    [Header("Breathing Room")]
+    public bool enableBreathingRoom = true; // Toggle breathing room feature
+    public float breathingRoomPerTile = 0.2f; // Seconds of breathing room per tile matched
+    public float maxBreathingRoom = 5f; // Maximum breathing room duration
+
     [Header("Match Processing")]
     public float processMatchDuration = 1.5f;
     public float blinkSpeed = 0.15f;
@@ -50,6 +55,7 @@ public class GridManager : MonoBehaviour
     private float gracePeriodTimer = 1.5f;
     private bool hasBlockAtTop = false;
     private bool gameOver = false;
+    private float breathingRoomTimer = 0f; // Time remaining before grid resumes rising
     
     void Start()
     {
@@ -259,7 +265,17 @@ public class GridManager : MonoBehaviour
     {
         while (!gameOver)
         {
-            if (!isInGracePeriod && !isProcessingMatches)
+            // Handle breathing room countdown
+            if (breathingRoomTimer > 0f)
+            {
+                breathingRoomTimer -= Time.deltaTime;
+                if (breathingRoomTimer < 0f)
+                {
+                    breathingRoomTimer = 0f;
+                }
+            }
+
+            if (!isInGracePeriod && !isProcessingMatches && breathingRoomTimer <= 0f)
             {
                 // X (primary) or L (alternate) to speed up rising
                 float riseSpeed = (Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L)) ? fastRiseSpeed : normalRiseSpeed;
@@ -486,20 +502,21 @@ public class GridManager : MonoBehaviour
             StartCoroutine(MoveTile(rightTile, new Vector2Int(leftX, y)));
         }
 
-        yield return new WaitForSeconds(0.2f);
+        yield return new WaitForSeconds(0.15f);
+
+        // Allow new swaps immediately after animation completes
+        isSwapping = false;
 
         // Drop any tiles that can fall after swap
         yield return StartCoroutine(DropTiles());
 
-        // Then check for matches
-        List<GameObject> matches = GetMatchesInArea(leftX - 2, rightX + 2, y - 2, y + 2);
+        // Check entire grid for matches since tiles may have dropped far from original position
+        List<GameObject> matches = GetAllMatches();
 
         if (matches.Count > 0)
         {
             StartCoroutine(ProcessMatches(matches));
         }
-
-        isSwapping = false;
     }
     
     IEnumerator MoveTile(GameObject tile, Vector2Int targetPos, bool playLandSound = false)
@@ -507,7 +524,7 @@ public class GridManager : MonoBehaviour
         if (tile == null) yield break;
 
         Vector3 targetWorldPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize + currentGridOffset, 0);
-        float duration = 0.2f;
+        float duration = 0.15f;
         float elapsed = 0;
         Vector3 startPos = tile.transform.position;
 
@@ -559,24 +576,33 @@ public class GridManager : MonoBehaviour
 
             yield return StartCoroutine(BlinkTiles(allMatchedTiles, processMatchDuration));
 
-            // Get the current combo for all groups
+            // Get the current combo
             int currentCombo = scoreManager != null ? scoreManager.GetCombo() : 0;
 
-            // Score and pop each group
-            List<Coroutine> popCoroutines = new List<Coroutine>();
-            for (int i = 0; i < matchGroups.Count; i++)
+            // Count total tiles across all groups for this match
+            int totalTiles = 0;
+            foreach (List<GameObject> group in matchGroups)
             {
-                List<GameObject> group = matchGroups[i];
+                totalTiles += group.Count;
+            }
 
-                // Each group increments the combo
-                if (scoreManager != null)
-                {
-                    scoreManager.AddScore(group.Count);
-                }
+            // Add score once for all tiles matched from this action
+            if (scoreManager != null)
+            {
+                scoreManager.AddScore(totalTiles);
+            }
 
-                // Start popping this group asynchronously
-                int comboForThisGroup = currentCombo + i + 1;
-                popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboForThisGroup)));
+            // Add breathing room based on tiles matched
+            AddBreathingRoom(totalTiles);
+
+            // All groups from this match use the same combo number
+            int comboNumber = currentCombo + 1;
+
+            // Pop each group asynchronously with the same combo
+            List<Coroutine> popCoroutines = new List<Coroutine>();
+            foreach (List<GameObject> group in matchGroups)
+            {
+                popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboNumber)));
             }
 
             // Wait for all groups to finish popping
@@ -625,24 +651,33 @@ public class GridManager : MonoBehaviour
 
         yield return StartCoroutine(BlinkTiles(matches, processMatchDuration));
 
-        // Get the current combo for all groups
+        // Get the current combo
         int currentCombo = scoreManager != null ? scoreManager.GetCombo() : 0;
 
-        // Score and pop each group
-        List<Coroutine> popCoroutines = new List<Coroutine>();
-        for (int i = 0; i < matchGroups.Count; i++)
+        // Count total tiles across all groups for this match
+        int totalTiles = 0;
+        foreach (List<GameObject> group in matchGroups)
         {
-            List<GameObject> group = matchGroups[i];
+            totalTiles += group.Count;
+        }
 
-            // Each group increments the combo
-            if (scoreManager != null)
-            {
-                scoreManager.AddScore(group.Count);
-            }
+        // Add score once for all tiles matched from this action
+        if (scoreManager != null)
+        {
+            scoreManager.AddScore(totalTiles);
+        }
 
-            // Start popping this group asynchronously
-            int comboForThisGroup = currentCombo + i + 1;
-            popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboForThisGroup)));
+        // Add breathing room based on tiles matched
+        AddBreathingRoom(totalTiles);
+
+        // All groups from this match use the same combo number
+        int comboNumber = currentCombo + 1;
+
+        // Pop each group asynchronously with the same combo
+        List<Coroutine> popCoroutines = new List<Coroutine>();
+        foreach (List<GameObject> group in matchGroups)
+        {
+            popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboNumber)));
         }
 
         // Wait for all groups to finish popping
@@ -862,10 +897,6 @@ public class GridManager : MonoBehaviour
             {
                 if (grid[x, y] != null && grid[x + 1, y] != null && grid[x + 2, y] != null)
                 {
-                    // Only match if tiles are active (66% visible)
-                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x + 1, y]) || !IsTileActive(grid[x + 2, y]))
-                        continue;
-
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x + 1, y].GetComponent<Tile>().TileType;
                     int type3 = grid[x + 2, y].GetComponent<Tile>().TileType;
@@ -886,10 +917,6 @@ public class GridManager : MonoBehaviour
             {
                 if (grid[x, y] != null && grid[x, y + 1] != null && grid[x, y + 2] != null)
                 {
-                    // Only match if tiles are active (66% visible)
-                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x, y + 1]) || !IsTileActive(grid[x, y + 2]))
-                        continue;
-
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x, y + 1].GetComponent<Tile>().TileType;
                     int type3 = grid[x, y + 2].GetComponent<Tile>().TileType;
@@ -969,26 +996,22 @@ public class GridManager : MonoBehaviour
     List<GameObject> GetMatchesInArea(int minX, int maxX, int minY, int maxY)
     {
         HashSet<GameObject> matches = new HashSet<GameObject>();
-        
+
         minX = Mathf.Max(0, minX);
         maxX = Mathf.Min(gridWidth - 1, maxX);
         minY = Mathf.Max(0, minY);
         maxY = Mathf.Min(gridHeight - 1, maxY);
-        
+
         for (int y = minY; y <= maxY; y++)
         {
             for (int x = minX; x <= maxX - 2; x++)
             {
                 if (grid[x, y] != null && grid[x + 1, y] != null && grid[x + 2, y] != null)
                 {
-                    // Only match if tiles are active (66% visible)
-                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x + 1, y]) || !IsTileActive(grid[x + 2, y]))
-                        continue;
-                    
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x + 1, y].GetComponent<Tile>().TileType;
                     int type3 = grid[x + 2, y].GetComponent<Tile>().TileType;
-                    
+
                     if (type1 == type2 && type2 == type3)
                     {
                         matches.Add(grid[x, y]);
@@ -998,21 +1021,17 @@ public class GridManager : MonoBehaviour
                 }
             }
         }
-        
+
         for (int x = minX; x <= maxX; x++)
         {
             for (int y = minY; y <= maxY - 2; y++)
             {
                 if (grid[x, y] != null && grid[x, y + 1] != null && grid[x, y + 2] != null)
                 {
-                    // Only match if tiles are active (66% visible)
-                    if (!IsTileActive(grid[x, y]) || !IsTileActive(grid[x, y + 1]) || !IsTileActive(grid[x, y + 2]))
-                        continue;
-                    
                     int type1 = grid[x, y].GetComponent<Tile>().TileType;
                     int type2 = grid[x, y + 1].GetComponent<Tile>().TileType;
                     int type3 = grid[x, y + 2].GetComponent<Tile>().TileType;
-                    
+
                     if (type1 == type2 && type2 == type3)
                     {
                         matches.Add(grid[x, y]);
@@ -1022,7 +1041,7 @@ public class GridManager : MonoBehaviour
                 }
             }
         }
-        
+
         return new List<GameObject>(matches);
     }
     
@@ -1045,5 +1064,14 @@ public class GridManager : MonoBehaviour
     bool IsValidPosition(int x, int y)
     {
         return x >= 0 && x < gridWidth && y >= 0 && y < gridHeight;
+    }
+
+    void AddBreathingRoom(int tilesMatched)
+    {
+        if (!enableBreathingRoom) return;
+
+        float additionalTime = tilesMatched * breathingRoomPerTile;
+        breathingRoomTimer = Mathf.Min(breathingRoomTimer + additionalTime, maxBreathingRoom);
+        Debug.Log($"Breathing room: +{additionalTime:F2}s for {tilesMatched} tiles (total: {breathingRoomTimer:F2}s)");
     }
 }
