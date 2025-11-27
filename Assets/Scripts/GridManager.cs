@@ -486,7 +486,10 @@ public class GridManager : MonoBehaviour
             StartCoroutine(MoveTile(rightTile, new Vector2Int(leftX, y)));
         }
 
-        yield return new WaitForSeconds(0.2f);
+        yield return new WaitForSeconds(0.15f);
+
+        // Allow new swaps immediately after animation completes
+        isSwapping = false;
 
         // Drop any tiles that can fall after swap
         yield return StartCoroutine(DropTiles());
@@ -498,8 +501,6 @@ public class GridManager : MonoBehaviour
         {
             StartCoroutine(ProcessMatches(matches));
         }
-
-        isSwapping = false;
     }
     
     IEnumerator MoveTile(GameObject tile, Vector2Int targetPos, bool playLandSound = false)
@@ -507,7 +508,7 @@ public class GridManager : MonoBehaviour
         if (tile == null) yield break;
 
         Vector3 targetWorldPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize + currentGridOffset, 0);
-        float duration = 0.2f;
+        float duration = 0.15f;
         float elapsed = 0;
         Vector3 startPos = tile.transform.position;
 
