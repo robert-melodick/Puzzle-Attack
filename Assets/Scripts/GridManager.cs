@@ -560,24 +560,30 @@ public class GridManager : MonoBehaviour
 
             yield return StartCoroutine(BlinkTiles(allMatchedTiles, processMatchDuration));
 
-            // Get the current combo for all groups
+            // Get the current combo
             int currentCombo = scoreManager != null ? scoreManager.GetCombo() : 0;
 
-            // Score and pop each group
-            List<Coroutine> popCoroutines = new List<Coroutine>();
-            for (int i = 0; i < matchGroups.Count; i++)
+            // Count total tiles across all groups for this match
+            int totalTiles = 0;
+            foreach (List<GameObject> group in matchGroups)
             {
-                List<GameObject> group = matchGroups[i];
+                totalTiles += group.Count;
+            }
 
-                // Each group increments the combo
-                if (scoreManager != null)
-                {
-                    scoreManager.AddScore(group.Count);
-                }
+            // Add score once for all tiles matched from this action
+            if (scoreManager != null)
+            {
+                scoreManager.AddScore(totalTiles);
+            }
 
-                // Start popping this group asynchronously
-                int comboForThisGroup = currentCombo + i + 1;
-                popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboForThisGroup)));
+            // All groups from this match use the same combo number
+            int comboNumber = currentCombo + 1;
+
+            // Pop each group asynchronously with the same combo
+            List<Coroutine> popCoroutines = new List<Coroutine>();
+            foreach (List<GameObject> group in matchGroups)
+            {
+                popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboNumber)));
             }
 
             // Wait for all groups to finish popping
@@ -626,24 +632,30 @@ public class GridManager : MonoBehaviour
 
         yield return StartCoroutine(BlinkTiles(matches, processMatchDuration));
 
-        // Get the current combo for all groups
+        // Get the current combo
         int currentCombo = scoreManager != null ? scoreManager.GetCombo() : 0;
 
-        // Score and pop each group
-        List<Coroutine> popCoroutines = new List<Coroutine>();
-        for (int i = 0; i < matchGroups.Count; i++)
+        // Count total tiles across all groups for this match
+        int totalTiles = 0;
+        foreach (List<GameObject> group in matchGroups)
         {
-            List<GameObject> group = matchGroups[i];
+            totalTiles += group.Count;
+        }
 
-            // Each group increments the combo
-            if (scoreManager != null)
-            {
-                scoreManager.AddScore(group.Count);
-            }
+        // Add score once for all tiles matched from this action
+        if (scoreManager != null)
+        {
+            scoreManager.AddScore(totalTiles);
+        }
 
-            // Start popping this group asynchronously
-            int comboForThisGroup = currentCombo + i + 1;
-            popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboForThisGroup)));
+        // All groups from this match use the same combo number
+        int comboNumber = currentCombo + 1;
+
+        // Pop each group asynchronously with the same combo
+        List<Coroutine> popCoroutines = new List<Coroutine>();
+        foreach (List<GameObject> group in matchGroups)
+        {
+            popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboNumber)));
         }
 
         // Wait for all groups to finish popping

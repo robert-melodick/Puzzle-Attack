@@ -157,7 +157,7 @@ MonoBehaviour:
   fastRiseSpeed: 2
   gracePeriod: 2
   processMatchDuration: 1
-  blinkSpeed: 0.05
+  blinkSpeed: 0.1
   delayBetweenPops: 0.3
   scoreManager: {fileID: 1271421759}
   tilePrefab: {fileID: 5124203171544064163, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
