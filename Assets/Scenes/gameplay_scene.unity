@@ -156,6 +156,10 @@ MonoBehaviour:
   normalRiseSpeed: 0.5
   fastRiseSpeed: 2
   gracePeriod: 2
+  enableBreathingRoom: 1
+  breathingRoomPerTile: 0.2
+  maxBreathingRoom: 5
+  swapUnderFallingGracePeriod: 0.05
   processMatchDuration: 1
   blinkSpeed: 0.1
   delayBetweenPops: 0.3

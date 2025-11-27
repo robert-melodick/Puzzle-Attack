@@ -23,6 +23,12 @@ public class GridManager : MonoBehaviour
     public float breathingRoomPerTile = 0.2f; // Seconds of breathing room per tile matched
     public float maxBreathingRoom = 5f; // Maximum breathing room duration
 
+    [Header("Block Fall Mechanics")]
+    public float baseFallSpeed = 6f; // Base tiles per second for falling
+    public float minFallDuration = 0.1f; // Minimum time for a fall (prevents instant drops)
+    public float nearMissThreshold = 0.33f; // How far into target space counts as "near miss"
+    public float failedSwapCooldown = 0.15f; // Cooldown after failed swap-under attempt
+
     [Header("Match Processing")]
     public float processMatchDuration = 1.5f;
     public float blinkSpeed = 0.15f;
@@ -48,7 +54,11 @@ public class GridManager : MonoBehaviour
     private bool isSwapping = false;
     private bool isProcessingMatches = false;
     private HashSet<Vector2Int> processingTiles = new HashSet<Vector2Int>();
-    
+    private HashSet<GameObject> animatingTiles = new HashSet<GameObject>(); // Tiles currently moving
+    private Dictionary<GameObject, Vector2Int> fallingTileOrigins = new Dictionary<GameObject, Vector2Int>(); // Track where falling tiles started
+    private Dictionary<Vector2Int, float> swapCooldowns = new Dictionary<Vector2Int, float>(); // Tracks cooldown per position
+    private bool swapButtonReleased = true; // Track if swap button was released since last swap
+
     private float currentGridOffset = 0f; // How much the grid has risen
     private float nextRowSpawnOffset = 0f; // When to spawn next row
     private bool isInGracePeriod = false;
@@ -353,11 +363,14 @@ public class GridManager : MonoBehaviour
                         }
                     }
 
-                    // Check for matches after spawning new row
-                    List<GameObject> matches = GetAllMatches();
-                    if (matches.Count > 0)
+                    // Check for matches after spawning new row (only if not already processing)
+                    if (!isProcessingMatches)
                     {
-                        StartCoroutine(CheckAndClearMatches());
+                        List<GameObject> matches = GetAllMatches();
+                        if (matches.Count > 0)
+                        {
+                            StartCoroutine(CheckAndClearMatches());
+                        }
                     }
                 }
 
@@ -425,7 +438,18 @@ public class GridManager : MonoBehaviour
     void Update()
     {
         if (gameOver) return;
-        
+
+        // Update swap cooldowns
+        List<Vector2Int> cooldownKeys = new List<Vector2Int>(swapCooldowns.Keys);
+        foreach (var key in cooldownKeys)
+        {
+            swapCooldowns[key] -= Time.deltaTime;
+            if (swapCooldowns[key] <= 0f)
+            {
+                swapCooldowns.Remove(key);
+            }
+        }
+
         // Cursor movement - Arrow Keys (primary) or WASD (alternate)
         if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
         {
@@ -443,21 +467,100 @@ public class GridManager : MonoBehaviour
         {
             MoveCursor(0, -1);
         }
-        
-        // Swap with Z (primary), K (alternate), or Space
-        if (!isSwapping && (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Space)))
+
+        // Track if swap button has been released
+        if (!Input.GetKey(KeyCode.Z) && !Input.GetKey(KeyCode.K) && !Input.GetKey(KeyCode.Space))
+        {
+            swapButtonReleased = true;
+        }
+
+        // Swap with Z (primary), K (alternate), or Space - only if button was released since last swap
+        if (swapButtonReleased && (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Space)))
         {
             int leftX = cursorPosition.x;
             int rightX = cursorPosition.x + 1;
             int y = cursorPosition.y;
-            
-            if (!IsTileBeingProcessed(leftX, y) && !IsTileBeingProcessed(rightX, y))
+
+            Vector2Int leftPos = new Vector2Int(leftX, y);
+            Vector2Int rightPos = new Vector2Int(rightX, y);
+
+            // Check for cooldowns
+            if (swapCooldowns.ContainsKey(leftPos) || swapCooldowns.ContainsKey(rightPos))
             {
+                Debug.Log("Swap on cooldown!");
+                return;
+            }
+
+            GameObject leftTile = grid[leftX, y];
+            GameObject rightTile = grid[rightX, y];
+
+            // Check if either tile is being processed
+            bool leftProcessed = IsTileBeingProcessed(leftX, y);
+            bool rightProcessed = IsTileBeingProcessed(rightX, y);
+
+            // Check for falling blocks and near-miss situations
+            bool canSwap = true;
+            GameObject fallingBlockLeft = null;
+            GameObject fallingBlockRight = null;
+
+            for (int checkY = y + 1; checkY < gridHeight; checkY++)
+            {
+                GameObject leftColumnTile = grid[leftX, checkY];
+                GameObject rightColumnTile = grid[rightX, checkY];
+
+                if (leftColumnTile != null && animatingTiles.Contains(leftColumnTile))
+                {
+                    // Check if near-miss (block is 33% into target space)
+                    Tile tileScript = leftColumnTile.GetComponent<Tile>();
+                    float targetY = tileScript.GridY * tileSize + currentGridOffset;
+                    float currentY = leftColumnTile.transform.position.y;
+                    float distance = targetY - currentY;
+                    float fallDistance = (checkY - y) * tileSize;
+
+                    if (distance <= fallDistance * nearMissThreshold)
+                    {
+                        // Near miss! Allow the swap
+                        fallingBlockLeft = leftColumnTile;
+                    }
+                    else
+                    {
+                        // Too early, block swap
+                        canSwap = false;
+                    }
+                }
+
+                if (rightColumnTile != null && animatingTiles.Contains(rightColumnTile))
+                {
+                    Tile tileScript = rightColumnTile.GetComponent<Tile>();
+                    float targetY = tileScript.GridY * tileSize + currentGridOffset;
+                    float currentY = rightColumnTile.transform.position.y;
+                    float distance = targetY - currentY;
+                    float fallDistance = (checkY - y) * tileSize;
+
+                    if (distance <= fallDistance * nearMissThreshold)
+                    {
+                        // Near miss! Allow the swap
+                        fallingBlockRight = rightColumnTile;
+                    }
+                    else
+                    {
+                        // Too early, block swap
+                        canSwap = false;
+                    }
+                }
+            }
+
+            if (!leftProcessed && !rightProcessed && canSwap)
+            {
+                swapButtonReleased = false; // Mark button as pressed
                 StartCoroutine(SwapCursorTiles());
             }
             else
             {
-                Debug.Log("Cannot swap - tiles are being processed!");
+                // Failed attempt - add cooldown
+                swapCooldowns[leftPos] = failedSwapCooldown;
+                swapCooldowns[rightPos] = failedSwapCooldown;
+                Debug.Log("Cannot swap - tiles are being processed or falling blocks too high!");
             }
         }
     }
@@ -497,16 +600,19 @@ public class GridManager : MonoBehaviour
         grid[leftX, y] = rightTile;
         grid[rightX, y] = leftTile;
 
+        // Mark tiles as animating immediately
         if (leftTile != null)
         {
+            animatingTiles.Add(leftTile);
             leftTile.GetComponent<Tile>().Initialize(rightX, y, leftTile.GetComponent<Tile>().TileType, this);
-            StartCoroutine(MoveTile(leftTile, new Vector2Int(rightX, y)));
+            StartCoroutine(MoveTileAndUntrack(leftTile, new Vector2Int(rightX, y), false));
         }
 
         if (rightTile != null)
         {
+            animatingTiles.Add(rightTile);
             rightTile.GetComponent<Tile>().Initialize(leftX, y, rightTile.GetComponent<Tile>().TileType, this);
-            StartCoroutine(MoveTile(rightTile, new Vector2Int(leftX, y)));
+            StartCoroutine(MoveTileAndUntrack(rightTile, new Vector2Int(leftX, y), false));
         }
 
         yield return new WaitForSeconds(0.15f);
@@ -514,15 +620,68 @@ public class GridManager : MonoBehaviour
         // Allow new swaps immediately after animation completes
         isSwapping = false;
 
+        // Cancel any falling tile animations that might conflict with the swap
+        // Move falling tiles back to their origin positions
+        List<GameObject> fallingTiles = new List<GameObject>(fallingTileOrigins.Keys);
+        foreach (GameObject fallingTile in fallingTiles)
+        {
+            if (fallingTile != null && fallingTileOrigins.ContainsKey(fallingTile))
+            {
+                Vector2Int origin = fallingTileOrigins[fallingTile];
+                Tile tileScript = fallingTile.GetComponent<Tile>();
+
+                // Clear from destination
+                grid[tileScript.GridX, tileScript.GridY] = null;
+
+                // Put back at origin
+                grid[origin.x, origin.y] = fallingTile;
+                tileScript.Initialize(origin.x, origin.y, tileScript.TileType, this);
+
+                // Snap visual position to origin
+                fallingTile.transform.position = new Vector3(
+                    origin.x * tileSize,
+                    origin.y * tileSize + currentGridOffset,
+                    0
+                );
+
+                // Remove from tracking
+                fallingTileOrigins.Remove(fallingTile);
+            }
+        }
+
+        animatingTiles.Clear();
+
+        // Snap all other tiles to their grid positions
+        for (int xPos = 0; xPos < gridWidth; xPos++)
+        {
+            for (int yPos = 0; yPos < gridHeight; yPos++)
+            {
+                if (grid[xPos, yPos] != null)
+                {
+                    GameObject tile = grid[xPos, yPos];
+                    Tile tileScript = tile.GetComponent<Tile>();
+                    // Snap tile to its grid position
+                    tile.transform.position = new Vector3(
+                        tileScript.GridX * tileSize,
+                        tileScript.GridY * tileSize + currentGridOffset,
+                        0
+                    );
+                }
+            }
+        }
+
         // Drop any tiles that can fall after swap
         yield return StartCoroutine(DropTiles());
 
         // Check entire grid for matches since tiles may have dropped far from original position
-        List<GameObject> matches = GetAllMatches();
-
-        if (matches.Count > 0)
+        if (!isProcessingMatches)
         {
-            StartCoroutine(ProcessMatches(matches));
+            List<GameObject> matches = GetAllMatches();
+
+            if (matches.Count > 0)
+            {
+                StartCoroutine(ProcessMatches(matches));
+            }
         }
     }
     
@@ -551,6 +710,97 @@ public class GridManager : MonoBehaviour
             {
                 tileScript.PlayLandSound();
             }
+        }
+    }
+
+    IEnumerator MoveTileAndUntrack(GameObject tile, Vector2Int targetPos, bool playLandSound = false, float overrideDuration = 0f)
+    {
+        if (tile == null) yield break;
+
+        bool isTracked = false; // Track whether this tile has been added to animatingTiles
+        float gracePeriodTimer = 0f;
+
+        // For tiles with no override duration, they should already be in animatingTiles (added by caller)
+        if (overrideDuration == 0f)
+        {
+            isTracked = animatingTiles.Contains(tile);
+        }
+
+        // Move the tile with interruption checking
+        Vector3 targetWorldPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize + currentGridOffset, 0);
+        Vector3 startPos = tile.transform.position;
+
+        // Calculate duration based on distance for falling tiles
+        float duration;
+        if (playLandSound) // This is a falling tile
+        {
+            float distance = Mathf.Abs(startPos.y - targetWorldPos.y);
+            float distanceInTiles = distance / tileSize;
+            duration = Mathf.Max(minFallDuration, distanceInTiles / baseFallSpeed);
+
+            // Grace period is proportional to fall duration (first 20% of the fall)
+            float gracePeriod = duration * 0.2f;
+            gracePeriodTimer = -gracePeriod; // Start negative so it counts up to 0
+        }
+        else // Swap animation
+        {
+            duration = overrideDuration > 0f ? overrideDuration : 0.15f;
+        }
+
+        float elapsed = 0;
+
+        while (elapsed < duration)
+        {
+            // Check if grace period has expired and tile needs to be tracked (for falling tiles)
+            if (playLandSound && !isTracked)
+            {
+                gracePeriodTimer += Time.deltaTime;
+                if (gracePeriodTimer >= 0f)
+                {
+                    animatingTiles.Add(tile);
+                    isTracked = true;
+                }
+            }
+
+            // Only check for interruption if tile is being tracked
+            if (isTracked && !animatingTiles.Contains(tile))
+            {
+                // Animation was interrupted by swap, abort
+                yield break;
+            }
+
+            if (tile == null) yield break;
+
+            tile.transform.position = Vector3.Lerp(startPos, targetWorldPos, elapsed / duration);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        // Final position
+        if (tile != null)
+        {
+            tile.transform.position = targetWorldPos;
+
+            if (playLandSound)
+            {
+                Tile tileScript = tile.GetComponent<Tile>();
+                if (tileScript != null)
+                {
+                    tileScript.PlayLandSound();
+                }
+
+                // Remove from falling tile origins - it successfully landed
+                if (fallingTileOrigins.ContainsKey(tile))
+                {
+                    fallingTileOrigins.Remove(tile);
+                }
+            }
+        }
+
+        // Untrack when done (only if we tracked it)
+        if (tile != null && isTracked)
+        {
+            animatingTiles.Remove(tile);
         }
     }
     
@@ -619,9 +869,11 @@ public class GridManager : MonoBehaviour
             }
 
             yield return new WaitForSeconds(0.1f);
-            yield return StartCoroutine(DropTiles());
 
+            // Clear processing tiles before dropping so positions aren't blocked
             processingTiles.Clear();
+
+            yield return StartCoroutine(DropTiles());
 
             matchGroups = GetMatchGroups();
         }
@@ -694,9 +946,11 @@ public class GridManager : MonoBehaviour
         }
 
         yield return new WaitForSeconds(0.1f);
-        yield return StartCoroutine(DropTiles());
 
+        // Clear processing tiles before dropping so positions aren't blocked
         processingTiles.Clear();
+
+        yield return StartCoroutine(DropTiles());
 
         List<List<GameObject>> cascadeMatchGroups = GetMatchGroups();
         if (cascadeMatchGroups.Count > 0)
@@ -781,20 +1035,27 @@ public class GridManager : MonoBehaviour
     {
         for (int x = 0; x < gridWidth; x++)
         {
-            for (int y = 0; y < gridHeight; y++)
+            for (int targetY = 0; targetY < gridHeight; targetY++)
             {
-                if (grid[x, y] == null)
+                if (grid[x, targetY] == null)
                 {
-                    for (int aboveY = y + 1; aboveY < gridHeight; aboveY++)
+                    for (int aboveY = targetY + 1; aboveY < gridHeight; aboveY++)
                     {
                         if (grid[x, aboveY] != null)
                         {
-                            grid[x, y] = grid[x, aboveY];
+                            GameObject droppingTile = grid[x, aboveY];
+
+                            // Track where this tile is falling FROM
+                            fallingTileOrigins[droppingTile] = new Vector2Int(x, aboveY);
+
+                            grid[x, targetY] = droppingTile;
                             grid[x, aboveY] = null;
 
-                            Tile tile = grid[x, y].GetComponent<Tile>();
-                            tile.Initialize(x, y, tile.TileType, this);
-                            StartCoroutine(MoveTile(grid[x, y], new Vector2Int(x, y), true));
+                            Tile tile = droppingTile.GetComponent<Tile>();
+                            tile.Initialize(x, targetY, tile.TileType, this);
+
+                            // Grace period calculated automatically based on fall distance
+                            StartCoroutine(MoveTileAndUntrack(droppingTile, new Vector2Int(x, targetY), true));
                             break;
                         }
                     }
@@ -809,11 +1070,11 @@ public class GridManager : MonoBehaviour
     {
         for (int x = 0; x < gridWidth; x++)
         {
-            for (int y = 0; y < gridHeight; y++)
+            for (int gridY = 0; gridY < gridHeight; gridY++)
             {
-                if (grid[x, y] == null)
+                if (grid[x, gridY] == null)
                 {
-                    SpawnTile(x, y);
+                    SpawnTile(x, gridY);
                     yield return new WaitForSeconds(0.05f);
                 }
             }
