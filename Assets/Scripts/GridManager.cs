@@ -352,8 +352,15 @@ public class GridManager : MonoBehaviour
                             UpdateTileActiveState(tile, tileScript.GridY);
                         }
                     }
+
+                    // Check for matches after spawning new row
+                    List<GameObject> matches = GetAllMatches();
+                    if (matches.Count > 0)
+                    {
+                        StartCoroutine(CheckAndClearMatches());
+                    }
                 }
-                
+
                 // Check if any block reached the top
                 CheckTopRow();
             }
