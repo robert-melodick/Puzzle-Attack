@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 4cde1814643800e40b098c84cd88f2d7
+guid: f809e603c68cc1a45ba5fa4d73b126f8
 ScriptedImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -123,7 +123,7 @@ ScriptedImporter:
     tessellationDetail: 0
     uvTransform: {x: 0, y: 0}
   animatedSpriteImportData:
-  - name: water_tile
+  - name: map_grass_texture
     originalName: 
     pivot: {x: 0.5, y: 0}
     alignment: 9
@@ -135,7 +135,7 @@ ScriptedImporter:
       y: 4
       width: 32
       height: 32
-    spriteID: b455375a52b01f64cbef31ecce8dd515
+    spriteID: ab3f0a02a8b00a746b3518ff6fd6eb4b
     spriteBone: []
     spriteOutline: []
     vertices: []
@@ -148,17 +148,17 @@ ScriptedImporter:
   asepriteLayers:
   - layerIndex: 0
     uuid:
-      value0: 2987474246
+      value0: 3940208879
       value1: 0
       value2: 0
       value3: 0
     guid: 0
-    name: water_tile
+    name: map_grass_texture
     layerFlags: 0
     layerType: 0
     blendMode: 0
     cells:
-    - name: water_tile
+    - name: map_grass_texture
       frameIndex: 0
       additiveSortOrder: 0
       cellRect:
@@ -166,7 +166,7 @@ ScriptedImporter:
         y: 0
         width: 32
         height: 32
-      spriteId: b455375a52b01f64cbef31ecce8dd515
+      spriteId: ab3f0a02a8b00a746b3518ff6fd6eb4b
     linkedCells: []
     parentIndex: -1
   platformSettings:
