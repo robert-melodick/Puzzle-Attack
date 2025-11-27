@@ -494,8 +494,8 @@ public class GridManager : MonoBehaviour
         // Drop any tiles that can fall after swap
         yield return StartCoroutine(DropTiles());
 
-        // Then check for matches
-        List<GameObject> matches = GetMatchesInArea(leftX - 2, rightX + 2, y - 2, y + 2);
+        // Check entire grid for matches since tiles may have dropped far from original position
+        List<GameObject> matches = GetAllMatches();
 
         if (matches.Count > 0)
         {
