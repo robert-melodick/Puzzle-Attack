@@ -17,7 +17,12 @@ public class GridManager : MonoBehaviour
     public float normalRiseSpeed = 0.5f; // Units per second
     public float fastRiseSpeed = 2f; // Units per second when holding X
     public float gracePeriod = 2f; // Seconds before game over when block reaches top
-    
+
+    [Header("Breathing Room")]
+    public bool enableBreathingRoom = true; // Toggle breathing room feature
+    public float breathingRoomPerTile = 0.2f; // Seconds of breathing room per tile matched
+    public float maxBreathingRoom = 5f; // Maximum breathing room duration
+
     [Header("Match Processing")]
     public float processMatchDuration = 1.5f;
     public float blinkSpeed = 0.15f;
@@ -50,6 +55,7 @@ public class GridManager : MonoBehaviour
     private float gracePeriodTimer = 1.5f;
     private bool hasBlockAtTop = false;
     private bool gameOver = false;
+    private float breathingRoomTimer = 0f; // Time remaining before grid resumes rising
     
     void Start()
     {
@@ -259,7 +265,17 @@ public class GridManager : MonoBehaviour
     {
         while (!gameOver)
         {
-            if (!isInGracePeriod && !isProcessingMatches)
+            // Handle breathing room countdown
+            if (breathingRoomTimer > 0f)
+            {
+                breathingRoomTimer -= Time.deltaTime;
+                if (breathingRoomTimer < 0f)
+                {
+                    breathingRoomTimer = 0f;
+                }
+            }
+
+            if (!isInGracePeriod && !isProcessingMatches && breathingRoomTimer <= 0f)
             {
                 // X (primary) or L (alternate) to speed up rising
                 float riseSpeed = (Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L)) ? fastRiseSpeed : normalRiseSpeed;
@@ -576,6 +592,9 @@ public class GridManager : MonoBehaviour
                 scoreManager.AddScore(totalTiles);
             }
 
+            // Add breathing room based on tiles matched
+            AddBreathingRoom(totalTiles);
+
             // All groups from this match use the same combo number
             int comboNumber = currentCombo + 1;
 
@@ -647,6 +666,9 @@ public class GridManager : MonoBehaviour
         {
             scoreManager.AddScore(totalTiles);
         }
+
+        // Add breathing room based on tiles matched
+        AddBreathingRoom(totalTiles);
 
         // All groups from this match use the same combo number
         int comboNumber = currentCombo + 1;
@@ -1042,5 +1064,14 @@ public class GridManager : MonoBehaviour
     bool IsValidPosition(int x, int y)
     {
         return x >= 0 && x < gridWidth && y >= 0 && y < gridHeight;
+    }
+
+    void AddBreathingRoom(int tilesMatched)
+    {
+        if (!enableBreathingRoom) return;
+
+        float additionalTime = tilesMatched * breathingRoomPerTile;
+        breathingRoomTimer = Mathf.Min(breathingRoomTimer + additionalTime, maxBreathingRoom);
+        Debug.Log($"Breathing room: +{additionalTime:F2}s for {tilesMatched} tiles (total: {breathingRoomTimer:F2}s)");
     }
 }
