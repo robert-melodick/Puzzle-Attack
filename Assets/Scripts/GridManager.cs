@@ -23,6 +23,9 @@ public class GridManager : MonoBehaviour
     private GameObject[,] grid;
     private GameObject[,] preloadGrid; // Extra rows below main grid
     private bool isSwapping = false;
+    private HashSet<GameObject> swappingTiles = new HashSet<GameObject>(); // Tiles currently being swapped
+
+    public bool IsTileSwapping(GameObject tile) => swappingTiles.Contains(tile);
 
     void Start()
     {
@@ -111,19 +114,36 @@ public class GridManager : MonoBehaviour
         grid[leftX, y] = rightTile;
         grid[rightX, y] = leftTile;
 
+        // Mark tiles as swapping so GridRiser won't update their positions
+        if (leftTile != null) swappingTiles.Add(leftTile);
+        if (rightTile != null) swappingTiles.Add(rightTile);
+
+        // Start swap animations WITHOUT updating grid coordinates yet
+        // This prevents GridRiser from teleporting them before animation completes
+        if (leftTile != null)
+        {
+            StartCoroutine(MoveTileSwap(leftTile, new Vector2Int(rightX, y)));
+        }
+
+        if (rightTile != null)
+        {
+            StartCoroutine(MoveTileSwap(rightTile, new Vector2Int(leftX, y)));
+        }
+
+        yield return new WaitForSeconds(0.15f);
+
+        // NOW update grid coordinates after animation completes
         if (leftTile != null)
         {
             leftTile.GetComponent<Tile>().Initialize(rightX, y, leftTile.GetComponent<Tile>().TileType, this);
-            StartCoroutine(MoveTile(leftTile, new Vector2Int(rightX, y)));
+            swappingTiles.Remove(leftTile);
         }
 
         if (rightTile != null)
         {
             rightTile.GetComponent<Tile>().Initialize(leftX, y, rightTile.GetComponent<Tile>().TileType, this);
-            StartCoroutine(MoveTile(rightTile, new Vector2Int(leftX, y)));
+            swappingTiles.Remove(rightTile);
         }
-
-        yield return new WaitForSeconds(0.15f);
 
         // Allow new swaps immediately after animation completes
         isSwapping = false;
@@ -138,6 +158,29 @@ public class GridManager : MonoBehaviour
         {
             StartCoroutine(matchProcessor.ProcessMatches(matches));
         }
+    }
+
+    IEnumerator MoveTileSwap(GameObject tile, Vector2Int targetPos)
+    {
+        // Special version for swapping that doesn't rely on tile's GridX/GridY
+        if (tile == null) yield break;
+
+        Vector3 startPos = tile.transform.position;
+        float duration = 0.15f;
+        float elapsed = 0;
+
+        while (elapsed < duration)
+        {
+            // Calculate target position dynamically using current grid offset
+            Vector3 targetWorldPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+            tile.transform.position = Vector3.Lerp(startPos, targetWorldPos, elapsed / duration);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        // Final position snap
+        Vector3 finalPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+        tile.transform.position = finalPos;
     }
 
     IEnumerator MoveTile(GameObject tile, Vector2Int targetPos, bool playLandSound = false)

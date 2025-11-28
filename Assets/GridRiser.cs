@@ -88,10 +88,10 @@ public class GridRiser : MonoBehaviour
                 currentGridOffset += riseAmount;
                 nextRowSpawnOffset += riseAmount;
 
-                // Update all tile positions
+                // Update all tile positions (except tiles currently being swapped)
                 foreach (GameObject tile in grid)
                 {
-                    if (tile != null)
+                    if (tile != null && !gridManager.IsTileSwapping(tile))
                     {
                         Tile tileScript = tile.GetComponent<Tile>();
                         tile.transform.position = new Vector3(
@@ -127,10 +127,10 @@ public class GridRiser : MonoBehaviour
                     currentGridOffset -= tileSize;
                     tileSpawner.SpawnRowAtBottom(currentGridOffset, cursorController);
 
-                    // Update positions after spawn
+                    // Update positions after spawn (except tiles currently being swapped)
                     foreach (GameObject tile in grid)
                     {
-                        if (tile != null)
+                        if (tile != null && !gridManager.IsTileSwapping(tile))
                         {
                             Tile tileScript = tile.GetComponent<Tile>();
                             tile.transform.position = new Vector3(
