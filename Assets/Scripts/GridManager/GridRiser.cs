@@ -56,6 +56,11 @@ public class GridRiser : MonoBehaviour
         StartCoroutine(RiseGrid());
     }
 
+    public void StopRising()
+    {
+        StopCoroutine(RiseGrid());
+    }
+
     public void AddBreathingRoom(int tilesMatched)
     {
         if (!enableBreathingRoom) return;
@@ -88,10 +93,10 @@ public class GridRiser : MonoBehaviour
                 currentGridOffset += riseAmount;
                 nextRowSpawnOffset += riseAmount;
 
-                // Update all tile positions (except tiles currently being swapped)
+                // Update all tile positions (except tiles currently animating)
                 foreach (GameObject tile in grid)
                 {
-                    if (tile != null && !gridManager.IsTileSwapping(tile))
+                    if (tile != null && !gridManager.IsTileAnimating(tile))
                     {
                         Tile tileScript = tile.GetComponent<Tile>();
                         tile.transform.position = new Vector3(
@@ -127,10 +132,10 @@ public class GridRiser : MonoBehaviour
                     currentGridOffset -= tileSize;
                     tileSpawner.SpawnRowAtBottom(currentGridOffset, cursorController);
 
-                    // Update positions after spawn (except tiles currently being swapped)
+                    // Update positions after spawn (except tiles currently animating)
                     foreach (GameObject tile in grid)
                     {
-                        if (tile != null && !gridManager.IsTileSwapping(tile))
+                        if (tile != null && !gridManager.IsTileAnimating(tile))
                         {
                             Tile tileScript = tile.GetComponent<Tile>();
                             tile.transform.position = new Vector3(
@@ -158,13 +163,10 @@ public class GridRiser : MonoBehaviour
                     }
 
                     // Check for matches after spawning new row (only if not already processing)
-                    if (!matchProcessor.IsProcessingMatches)
+                    List<GameObject> matches = matchDetector.GetAllMatches();
+                    if (matches.Count > 0 && !matchProcessor.IsProcessingMatches)
                     {
-                        List<GameObject> matches = matchDetector.GetAllMatches();
-                        if (matches.Count > 0)
-                        {
-                            StartCoroutine(matchProcessor.CheckAndClearMatches());
-                        }
+                        StartCoroutine(matchProcessor.CheckAndClearMatches());
                     }
                 }
 

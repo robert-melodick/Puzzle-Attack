@@ -24,8 +24,11 @@ public class GridManager : MonoBehaviour
     private GameObject[,] preloadGrid; // Extra rows below main grid
     private bool isSwapping = false;
     private HashSet<GameObject> swappingTiles = new HashSet<GameObject>(); // Tiles currently being swapped
+    private HashSet<GameObject> droppingTiles = new HashSet<GameObject>(); // Tiles currently dropping
 
     public bool IsTileSwapping(GameObject tile) => swappingTiles.Contains(tile);
+    public bool IsTileDropping(GameObject tile) => droppingTiles.Contains(tile);
+    public bool IsTileAnimating(GameObject tile) => swappingTiles.Contains(tile) || droppingTiles.Contains(tile);
 
     void Start()
     {
@@ -77,6 +80,10 @@ public class GridManager : MonoBehaviour
     {
         if (gridRiser.IsGameOver) return;
 
+        // Clean up only destroyed (null) tiles from animation sets
+        swappingTiles.RemoveWhere(tile => tile == null);
+        droppingTiles.RemoveWhere(tile => tile == null);
+
         // Handle cursor input
         cursorController.HandleInput(gridWidth, gridHeight);
 
@@ -88,13 +95,24 @@ public class GridManager : MonoBehaviour
             int rightX = cursorPos.x + 1;
             int y = cursorPos.y;
 
-            if (!matchProcessor.IsTileBeingProcessed(leftX, y) && !matchProcessor.IsTileBeingProcessed(rightX, y))
+            GameObject leftTile = grid[leftX, y];
+            GameObject rightTile = grid[rightX, y];
+
+            // Check if tiles are being processed, swapping, or dropping
+            bool leftProcessed = matchProcessor.IsTileBeingProcessed(leftX, y);
+            bool rightProcessed = matchProcessor.IsTileBeingProcessed(rightX, y);
+            bool leftSwapping = leftTile != null && swappingTiles.Contains(leftTile);
+            bool rightSwapping = rightTile != null && swappingTiles.Contains(rightTile);
+            bool leftDropping = leftTile != null && droppingTiles.Contains(leftTile);
+            bool rightDropping = rightTile != null && droppingTiles.Contains(rightTile);
+
+            if (!leftProcessed && !rightProcessed && !leftSwapping && !rightSwapping && !leftDropping && !rightDropping)
             {
                 StartCoroutine(SwapCursorTiles());
             }
             else
             {
-                Debug.Log("Cannot swap - tiles are being processed!");
+                Debug.Log("Cannot swap - tiles are being processed, swapping, or dropping!");
             }
         }
     }
@@ -118,35 +136,46 @@ public class GridManager : MonoBehaviour
         if (leftTile != null) swappingTiles.Add(leftTile);
         if (rightTile != null) swappingTiles.Add(rightTile);
 
-        // Start swap animations WITHOUT updating grid coordinates yet
-        // This prevents GridRiser from teleporting them before animation completes
-        if (leftTile != null)
+        try
         {
-            StartCoroutine(MoveTileSwap(leftTile, new Vector2Int(rightX, y)));
+            // Start swap animations WITHOUT updating grid coordinates yet
+            // This prevents GridRiser from teleporting them before animation completes
+            if (leftTile != null)
+            {
+                StartCoroutine(MoveTileSwap(leftTile, new Vector2Int(rightX, y)));
+            }
+
+            if (rightTile != null)
+            {
+                StartCoroutine(MoveTileSwap(rightTile, new Vector2Int(leftX, y)));
+            }
+
+            yield return new WaitForSeconds(0.15f);
+
+            // NOW update grid coordinates after animation completes
+            if (leftTile != null)
+            {
+                leftTile.GetComponent<Tile>().Initialize(rightX, y, leftTile.GetComponent<Tile>().TileType, this);
+                // Snap to exact swapped position to prevent diagonal movement when dropping
+                leftTile.transform.position = new Vector3(rightX * tileSize, y * tileSize + gridRiser.CurrentGridOffset, 0);
+            }
+
+            if (rightTile != null)
+            {
+                rightTile.GetComponent<Tile>().Initialize(leftX, y, rightTile.GetComponent<Tile>().TileType, this);
+                // Snap to exact swapped position to prevent diagonal movement when dropping
+                rightTile.transform.position = new Vector3(leftX * tileSize, y * tileSize + gridRiser.CurrentGridOffset, 0);
+            }
         }
-
-        if (rightTile != null)
+        finally
         {
-            StartCoroutine(MoveTileSwap(rightTile, new Vector2Int(leftX, y)));
-        }
-
-        yield return new WaitForSeconds(0.15f);
-
-        // NOW update grid coordinates after animation completes
-        if (leftTile != null)
-        {
-            leftTile.GetComponent<Tile>().Initialize(rightX, y, leftTile.GetComponent<Tile>().TileType, this);
+            // ALWAYS remove tiles from swapping set, even if an exception occurred
             swappingTiles.Remove(leftTile);
-        }
-
-        if (rightTile != null)
-        {
-            rightTile.GetComponent<Tile>().Initialize(leftX, y, rightTile.GetComponent<Tile>().TileType, this);
             swappingTiles.Remove(rightTile);
-        }
 
-        // Allow new swaps immediately after animation completes
-        isSwapping = false;
+            // Allow new swaps immediately after animation completes
+            isSwapping = false;
+        }
 
         // Drop any tiles that can fall after swap
         yield return StartCoroutine(DropTiles());
@@ -154,7 +183,7 @@ public class GridManager : MonoBehaviour
         // Check entire grid for matches since tiles may have dropped far from original position
         List<GameObject> matches = matchDetector.GetAllMatches();
 
-        if (matches.Count > 0)
+        if (matches.Count > 0 && !matchProcessor.IsProcessingMatches)
         {
             StartCoroutine(matchProcessor.ProcessMatches(matches));
         }
@@ -164,6 +193,12 @@ public class GridManager : MonoBehaviour
     {
         // Special version for swapping that doesn't rely on tile's GridX/GridY
         if (tile == null) yield break;
+
+        SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+        int originalSortingOrder = sr != null ? sr.sortingOrder : 0;
+
+        // Bring tile to front during swap
+        if (sr != null) sr.sortingOrder = 10;
 
         Vector3 startPos = tile.transform.position;
         float duration = 0.15f;
@@ -181,6 +216,61 @@ public class GridManager : MonoBehaviour
         // Final position snap
         Vector3 finalPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
         tile.transform.position = finalPos;
+
+        // Restore original sorting order
+        if (sr != null) sr.sortingOrder = originalSortingOrder;
+    }
+
+    IEnumerator MoveTileDrop(GameObject tile, Vector2Int fromPos, Vector2Int toPos)
+    {
+        if (tile == null)
+        {
+            droppingTiles.Remove(tile);
+            yield break;
+        }
+
+        SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+        int originalSortingOrder = sr != null ? sr.sortingOrder : 0;
+
+        // Bring tile to front during drop to prevent clipping behind tiles below
+        if (sr != null) sr.sortingOrder = 10;
+
+        Vector3 startWorldPos = new Vector3(fromPos.x * tileSize, fromPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+        float duration = 0.15f;
+        float elapsed = 0;
+
+        try
+        {
+            while (elapsed < duration && tile != null)
+            {
+                // Calculate target position dynamically using current grid offset
+                Vector3 targetWorldPos = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+                tile.transform.position = Vector3.Lerp(startWorldPos, targetWorldPos, elapsed / duration);
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            // Final position snap
+            if (tile != null)
+            {
+                tile.transform.position = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+
+                Tile tileScript = tile.GetComponent<Tile>();
+                if (tileScript != null)
+                {
+                    tileScript.PlayLandSound();
+                }
+
+                // Restore original sorting order
+                if (sr != null) sr.sortingOrder = originalSortingOrder;
+            }
+        }
+        finally
+        {
+            // ALWAYS remove from dropping set and restore sorting order
+            droppingTiles.Remove(tile);
+            if (sr != null) sr.sortingOrder = originalSortingOrder;
+        }
     }
 
     IEnumerator MoveTile(GameObject tile, Vector2Int targetPos, bool playLandSound = false)
@@ -213,6 +303,9 @@ public class GridManager : MonoBehaviour
 
     public IEnumerator DropTiles()
     {
+        List<(GameObject tile, Vector2Int from, Vector2Int to)> drops = new List<(GameObject, Vector2Int, Vector2Int)>();
+
+        // Collect all drops first
         for (int x = 0; x < gridWidth; x++)
         {
             for (int y = 0; y < gridHeight; y++)
@@ -223,16 +316,31 @@ public class GridManager : MonoBehaviour
                     {
                         if (grid[x, aboveY] != null)
                         {
-                            grid[x, y] = grid[x, aboveY];
-                            grid[x, aboveY] = null;
+                            GameObject tile = grid[x, aboveY];
+                            drops.Add((tile, new Vector2Int(x, aboveY), new Vector2Int(x, y)));
 
-                            Tile tile = grid[x, y].GetComponent<Tile>();
-                            tile.Initialize(x, y, tile.TileType, this);
-                            StartCoroutine(MoveTile(grid[x, y], new Vector2Int(x, y), true));
+                            // Update grid array
+                            grid[x, y] = tile;
+                            grid[x, aboveY] = null;
                             break;
                         }
                     }
                 }
+            }
+        }
+
+        // Update coordinates and start animations
+        foreach (var (tile, from, to) in drops)
+        {
+            if (tile != null)
+            {
+                // Update tile coordinates immediately
+                Tile tileScript = tile.GetComponent<Tile>();
+                tileScript.Initialize(to.x, to.y, tileScript.TileType, this);
+
+                // Add to dropping set to protect from GridRiser updates
+                droppingTiles.Add(tile);
+                StartCoroutine(MoveTileDrop(tile, from, to));
             }
         }
 
