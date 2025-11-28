@@ -119,9 +119,14 @@ public class TileSpawner : MonoBehaviour
                 grid[x, y] = grid[x, y - 1];
                 if (grid[x, y] != null)
                 {
-                    Tile tile = grid[x, y].GetComponent<Tile>();
-                    tile.Initialize(x, y, tile.TileType, gridManager);
-                    UpdateTileActiveState(grid[x, y], y, currentGridOffset);
+                    // Skip updating tiles that are currently animating (swapping or dropping)
+                    // They will update their own coordinates when animation completes
+                    if (!gridManager.IsTileAnimating(grid[x, y]))
+                    {
+                        Tile tile = grid[x, y].GetComponent<Tile>();
+                        tile.Initialize(x, y, tile.TileType, gridManager);
+                        UpdateTileActiveState(grid[x, y], y, currentGridOffset);
+                    }
                 }
             }
 

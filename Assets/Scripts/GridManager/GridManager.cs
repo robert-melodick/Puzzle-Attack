@@ -26,9 +26,27 @@ public class GridManager : MonoBehaviour
     private HashSet<GameObject> swappingTiles = new HashSet<GameObject>(); // Tiles currently being swapped
     private HashSet<GameObject> droppingTiles = new HashSet<GameObject>(); // Tiles currently dropping
 
+    public bool IsSwapping => isSwapping;
     public bool IsTileSwapping(GameObject tile) => swappingTiles.Contains(tile);
     public bool IsTileDropping(GameObject tile) => droppingTiles.Contains(tile);
     public bool IsTileAnimating(GameObject tile) => swappingTiles.Contains(tile) || droppingTiles.Contains(tile);
+
+    public Vector2Int? FindTilePosition(GameObject tile)
+    {
+        if (tile == null) return null;
+
+        for (int x = 0; x < gridWidth; x++)
+        {
+            for (int y = 0; y < gridHeight; y++)
+            {
+                if (grid[x, y] == tile)
+                {
+                    return new Vector2Int(x, y);
+                }
+            }
+        }
+        return null;
+    }
 
     void Start()
     {
@@ -129,12 +147,13 @@ public class GridManager : MonoBehaviour
         GameObject leftTile = grid[leftX, y];
         GameObject rightTile = grid[rightX, y];
 
-        grid[leftX, y] = rightTile;
-        grid[rightX, y] = leftTile;
-
-        // Mark tiles as swapping so GridRiser won't update their positions
+        // Mark tiles as swapping BEFORE updating grid array to prevent race conditions
         if (leftTile != null) swappingTiles.Add(leftTile);
         if (rightTile != null) swappingTiles.Add(rightTile);
+
+        // Update grid array after protection is applied
+        grid[leftX, y] = rightTile;
+        grid[rightX, y] = leftTile;
 
         try
         {
@@ -153,18 +172,33 @@ public class GridManager : MonoBehaviour
             yield return new WaitForSeconds(0.15f);
 
             // NOW update grid coordinates after animation completes
-            if (leftTile != null)
+            // Use actual grid positions in case grid rose during swap
+            Vector2Int? leftPos = FindTilePosition(leftTile);
+            Vector2Int? rightPos = FindTilePosition(rightTile);
+
+            if (leftTile != null && leftPos.HasValue)
             {
-                leftTile.GetComponent<Tile>().Initialize(rightX, y, leftTile.GetComponent<Tile>().TileType, this);
-                // Snap to exact swapped position to prevent diagonal movement when dropping
-                leftTile.transform.position = new Vector3(rightX * tileSize, y * tileSize + gridRiser.CurrentGridOffset, 0);
+                leftTile.GetComponent<Tile>().Initialize(leftPos.Value.x, leftPos.Value.y, leftTile.GetComponent<Tile>().TileType, this);
+                // Snap to exact position to prevent diagonal movement when dropping
+                leftTile.transform.position = new Vector3(leftPos.Value.x * tileSize, leftPos.Value.y * tileSize + gridRiser.CurrentGridOffset, 0);
             }
 
-            if (rightTile != null)
+            if (rightTile != null && rightPos.HasValue)
             {
-                rightTile.GetComponent<Tile>().Initialize(leftX, y, rightTile.GetComponent<Tile>().TileType, this);
-                // Snap to exact swapped position to prevent diagonal movement when dropping
-                rightTile.transform.position = new Vector3(leftX * tileSize, y * tileSize + gridRiser.CurrentGridOffset, 0);
+                rightTile.GetComponent<Tile>().Initialize(rightPos.Value.x, rightPos.Value.y, rightTile.GetComponent<Tile>().TileType, this);
+                // Snap to exact position to prevent diagonal movement when dropping
+                rightTile.transform.position = new Vector3(rightPos.Value.x * tileSize, rightPos.Value.y * tileSize + gridRiser.CurrentGridOffset, 0);
+            }
+
+            // Drop any tiles that can fall after swap
+            yield return StartCoroutine(DropTiles());
+
+            // Check entire grid for matches since tiles may have dropped far from original position
+            List<GameObject> matches = matchDetector.GetAllMatches();
+
+            if (matches.Count > 0 && !matchProcessor.IsProcessingMatches)
+            {
+                StartCoroutine(matchProcessor.ProcessMatches(matches));
             }
         }
         finally
@@ -173,19 +207,8 @@ public class GridManager : MonoBehaviour
             swappingTiles.Remove(leftTile);
             swappingTiles.Remove(rightTile);
 
-            // Allow new swaps immediately after animation completes
+            // Release swap lock after ALL operations complete (including drops and match detection)
             isSwapping = false;
-        }
-
-        // Drop any tiles that can fall after swap
-        yield return StartCoroutine(DropTiles());
-
-        // Check entire grid for matches since tiles may have dropped far from original position
-        List<GameObject> matches = matchDetector.GetAllMatches();
-
-        if (matches.Count > 0 && !matchProcessor.IsProcessingMatches)
-        {
-            StartCoroutine(matchProcessor.ProcessMatches(matches));
         }
     }
 

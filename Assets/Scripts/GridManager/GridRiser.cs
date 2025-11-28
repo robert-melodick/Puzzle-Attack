@@ -84,7 +84,8 @@ public class GridRiser : MonoBehaviour
                 }
             }
 
-            if (!isInGracePeriod && !matchProcessor.IsProcessingMatches && breathingRoomTimer <= 0f)
+            // Pause rising during swaps, matches, grace period, or breathing room
+            if (!isInGracePeriod && !matchProcessor.IsProcessingMatches && !gridManager.IsSwapping && breathingRoomTimer <= 0f)
             {
                 // X (primary) or L (alternate) to speed up rising. Left Shift as well for WASD players
                 float riseSpeed = (Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L) || Input.GetKey(KeyCode.LeftShift)) ? fastRiseSpeed : normalRiseSpeed;
