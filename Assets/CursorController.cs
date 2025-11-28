@@ -117,9 +117,10 @@ public class CursorController : MonoBehaviour
         }
     }
 
-    public void ShiftCursorUp(int gridHeight)
+    public void ShiftCursorUp(int gridHeight, float gridOffset)
     {
         // Shift cursor up in grid coordinates to maintain world position when grid rises
         cursorPosition.y = Mathf.Min(cursorPosition.y + 1, gridHeight - 1);
+        UpdateCursorPosition(gridOffset);
     }
 }

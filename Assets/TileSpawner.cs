@@ -151,7 +151,7 @@ public class TileSpawner : MonoBehaviour
         }
 
         // Shift cursor up in grid coordinates to maintain world position
-        cursorController.ShiftCursorUp(gridHeight);
+        cursorController.ShiftCursorUp(gridHeight, currentGridOffset);
     }
 
     public IEnumerator FillEmptySpaces(float currentGridOffset)
