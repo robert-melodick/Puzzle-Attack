@@ -13,6 +13,9 @@ public class GridManager : MonoBehaviour
     public int initialFillRows = 4; // How many rows to preload at start
     public int preloadRows = 2; // Extra rows preloaded below visible grid
 
+    [Header("Swap Settings")]
+    public float swapDuration = 0.15f; // Time in seconds for swap animation
+
     [Header("Components")]
     public CursorController cursorController;
     public GridRiser gridRiser;
@@ -169,7 +172,7 @@ public class GridManager : MonoBehaviour
                 StartCoroutine(MoveTileSwap(rightTile, new Vector2Int(leftX, y)));
             }
 
-            yield return new WaitForSeconds(0.15f);
+            yield return new WaitForSeconds(swapDuration);
 
             // NOW update grid coordinates after animation completes
             // Use actual grid positions in case grid rose during swap
@@ -224,7 +227,7 @@ public class GridManager : MonoBehaviour
         if (sr != null) sr.sortingOrder = 10;
 
         Vector3 startPos = tile.transform.position;
-        float duration = 0.15f;
+        float duration = swapDuration;
         float elapsed = 0;
 
         while (elapsed < duration)
