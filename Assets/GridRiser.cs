@@ -81,8 +81,8 @@ public class GridRiser : MonoBehaviour
 
             if (!isInGracePeriod && !matchProcessor.IsProcessingMatches && breathingRoomTimer <= 0f)
             {
-                // X (primary) or L (alternate) to speed up rising
-                float riseSpeed = (Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L)) ? fastRiseSpeed : normalRiseSpeed;
+                // X (primary) or L (alternate) to speed up rising. Left Shift as well for WASD players
+                float riseSpeed = (Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L) || Input.GetKey(KeyCode.LeftShift)) ? fastRiseSpeed : normalRiseSpeed;
                 float riseAmount = riseSpeed * Time.deltaTime;
 
                 currentGridOffset += riseAmount;
