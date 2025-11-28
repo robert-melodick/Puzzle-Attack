@@ -14,6 +14,9 @@ public class GridRiser : MonoBehaviour
     public float breathingRoomPerTile = 0.2f; // Seconds of breathing room per tile matched
     public float maxBreathingRoom = 5f; // Maximum breathing room duration
 
+    [Header("Catch-up Mechanics")]
+    public float catchUpMultiplier = 1.5f; // Speed multiplier when catching up from pauses (1.5 = 50% faster)
+
     private float currentGridOffset = 0f; // How much the grid has risen
     private float nextRowSpawnOffset = 0f; // When to spawn next row
     private bool isInGracePeriod = false;
@@ -21,6 +24,7 @@ public class GridRiser : MonoBehaviour
     private bool hasBlockAtTop = false;
     private bool gameOver = false;
     private float breathingRoomTimer = 0f; // Time remaining before grid resumes rising
+    private float pausedTimeDebt = 0f; // Accumulated time while paused (swaps, matches, etc.)
 
     private GridManager gridManager;
     private GameObject[,] grid;
@@ -84,12 +88,47 @@ public class GridRiser : MonoBehaviour
                 }
             }
 
-            // Pause rising during swaps, matches, grace period, or breathing room
-            if (!isInGracePeriod && !matchProcessor.IsProcessingMatches && !gridManager.IsSwapping && breathingRoomTimer <= 0f)
+            // Handle grace period separately
+            if (isInGracePeriod)
             {
-                // X (primary) or L (alternate) to speed up rising. Left Shift as well for WASD players
-                float riseSpeed = (Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L) || Input.GetKey(KeyCode.LeftShift)) ? fastRiseSpeed : normalRiseSpeed;
+                // Grace period countdown
+                gracePeriodTimer -= Time.deltaTime;
+                Debug.Log($"Grace Period: {gracePeriodTimer:F2}s remaining!");
+
+                if (gracePeriodTimer <= 0f)
+                {
+                    TriggerGameOver();
+                }
+                else if (!hasBlockAtTop)
+                {
+                    // Block was cleared, exit grace period
+                    isInGracePeriod = false;
+                    Debug.Log("Grace period ended - blocks cleared!");
+                }
+            }
+            // Check if grid should be paused (excluding grace period which is handled above)
+            else if (matchProcessor.IsProcessingMatches || gridManager.IsSwapping || breathingRoomTimer > 0f)
+            {
+                // Accumulate time debt while paused
+                pausedTimeDebt += Time.deltaTime;
+            }
+            else
+            {
+                // Grid is rising - calculate speed with catch-up multiplier if we have debt
+                float baseSpeed = (Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L) || Input.GetKey(KeyCode.LeftShift)) ? fastRiseSpeed : normalRiseSpeed;
+
+                // Apply catch-up multiplier if we have time debt
+                float speedMultiplier = (pausedTimeDebt > 0f) ? catchUpMultiplier : 1.0f;
+                float riseSpeed = baseSpeed * speedMultiplier;
                 float riseAmount = riseSpeed * Time.deltaTime;
+
+                // Pay off time debt based on extra distance traveled
+                if (pausedTimeDebt > 0f && speedMultiplier > 1.0f)
+                {
+                    float extraSpeed = baseSpeed * (speedMultiplier - 1.0f);
+                    float debtPaidOff = extraSpeed * Time.deltaTime / baseSpeed; // Time equivalent of extra distance
+                    pausedTimeDebt = Mathf.Max(0f, pausedTimeDebt - debtPaidOff);
+                }
 
                 currentGridOffset += riseAmount;
                 nextRowSpawnOffset += riseAmount;
@@ -173,23 +212,6 @@ public class GridRiser : MonoBehaviour
 
                 // Check if any block reached the top
                 CheckTopRow();
-            }
-            else if (isInGracePeriod)
-            {
-                // Grace period countdown
-                gracePeriodTimer -= Time.deltaTime;
-                Debug.Log($"Grace Period: {gracePeriodTimer:F2}s remaining!");
-
-                if (gracePeriodTimer <= 0f)
-                {
-                    TriggerGameOver();
-                }
-                else if (!hasBlockAtTop)
-                {
-                    // Block was cleared, exit grace period
-                    isInGracePeriod = false;
-                    Debug.Log("Grace period ended - blocks cleared!");
-                }
             }
 
             yield return null;

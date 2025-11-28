@@ -1018,6 +1018,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1271421759}
     - target: {fileID: 2877464028446485601, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: swapDuration
+      value: 0.05
+      objectReference: {fileID: 0}
+    - target: {fileID: 2877464028446485601, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: matchDetector
       value: 
       objectReference: {fileID: 157685463}
@@ -1039,7 +1043,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: normalRiseSpeed
-      value: 0.25
+      value: 0.5
       objectReference: {fileID: 0}
     - target: {fileID: 5347899561248015888, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: scoreManager
