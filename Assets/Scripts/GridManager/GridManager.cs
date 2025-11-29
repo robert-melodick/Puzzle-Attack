@@ -35,6 +35,8 @@ public class GridManager : MonoBehaviour
     // Block Slip mechanic: Track drop animation progress and targets
     private Dictionary<GameObject, float> droppingProgress = new Dictionary<GameObject, float>(); // Animation progress (0-1)
     private Dictionary<GameObject, Vector2Int> droppingTargets = new Dictionary<GameObject, Vector2Int>(); // Target positions
+    private Dictionary<GameObject, int> dropAnimationVersion = new Dictionary<GameObject, int>(); // Version counter to handle animation interruption
+    private HashSet<GameObject> retargetedDrops = new HashSet<GameObject>(); // Tiles that changed target mid-drop (others should land on top of these)
 
     public bool IsSwapping => isSwapping;
     public bool IsTileSwapping(GameObject tile) => swappingTiles.Contains(tile);
@@ -122,7 +124,9 @@ public class GridManager : MonoBehaviour
         {
             droppingProgress.Remove(key);
             droppingTargets.Remove(key);
+            dropAnimationVersion.Remove(key);
         }
+        retargetedDrops.RemoveWhere(tile => tile == null);
 
         // Handle cursor input
         cursorController.HandleInput(gridWidth, gridHeight);
@@ -765,23 +769,39 @@ public class GridManager : MonoBehaviour
 
     /// <summary>
     /// Overload that accepts grid positions - converts to world position and calls main implementation
+    /// Used by DropTiles for normal drops (no obstruction checking needed)
     /// </summary>
     IEnumerator MoveTileDrop(GameObject tile, Vector2Int fromPos, Vector2Int toPos)
     {
         Vector3 fromWorldPos = new Vector3(fromPos.x * tileSize, fromPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
-        yield return StartCoroutine(MoveTileDrop(tile, fromWorldPos, toPos));
+        yield return StartCoroutine(MoveTileDrop(tile, fromWorldPos, toPos, false));
+    }
+
+    /// <summary>
+    /// Overload for Block Slip - uses world position and enables obstruction checking
+    /// </summary>
+    IEnumerator MoveTileDrop(GameObject tile, Vector3 fromWorldPos, Vector2Int toPos)
+    {
+        yield return StartCoroutine(MoveTileDrop(tile, fromWorldPos, toPos, true));
     }
 
     /// <summary>
     /// Main drop animation - uses actual world position to prevent snapping/delay
     /// </summary>
-    IEnumerator MoveTileDrop(GameObject tile, Vector3 fromWorldPos, Vector2Int toPos)
+    /// <param name="checkForObstructions">If true, checks for path obstructions each frame (used for Block Slip).
+    /// Normal drops from DropTiles should pass false since paths are pre-calculated.</param>
+    IEnumerator MoveTileDrop(GameObject tile, Vector3 fromWorldPos, Vector2Int toPos, bool checkForObstructions)
     {
         if (tile == null)
         {
             droppingTiles.Remove(tile);
             yield break;
         }
+
+        // Increment version counter - this lets us know if we're still the "owner" of this animation
+        // If another animation starts for this tile, it will increment the version and we'll know not to clean up
+        int myVersion = dropAnimationVersion.GetValueOrDefault(tile, 0) + 1;
+        dropAnimationVersion[tile] = myVersion;
 
         // Track target position for Block Slip mechanic
         droppingTargets[tile] = toPos;
@@ -794,9 +814,10 @@ public class GridManager : MonoBehaviour
 
         // Use the passed world position directly - no recalculation that causes snapping!
         Vector3 startWorldPos = fromWorldPos;
+        Vector2Int currentTarget = toPos;
 
         // Calculate duration based on actual distance in world units
-        float targetY = toPos.y * tileSize + gridRiser.CurrentGridOffset;
+        float targetY = currentTarget.y * tileSize + gridRiser.CurrentGridOffset;
         float distance = Mathf.Abs(startWorldPos.y - targetY) / tileSize;
         float duration = dropDuration * distance; // Time per unit * distance
         float elapsed = 0;
@@ -805,21 +826,77 @@ public class GridManager : MonoBehaviour
         {
             while (elapsed < duration && tile != null)
             {
+                // Only check for obstructions if enabled (Block Slip scenarios)
+                // Normal drops from DropTiles have pre-calculated non-conflicting paths
+                if (checkForObstructions)
+                {
+                    // Only check if we're still more than 0.5 tiles away from target
+                    // This avoids edge cases with floating point rounding near the destination
+                    float currentWorldY = tile.transform.position.y;
+                    float targetWorldY = currentTarget.y * tileSize + gridRiser.CurrentGridOffset;
+                    float distanceToTarget = Mathf.Abs(currentWorldY - targetWorldY) / tileSize;
+                    
+                    if (distanceToTarget > 0.5f)
+                    {
+                        // Check if path is now obstructed (e.g., Block Slip placed something in our way)
+                        Vector2Int? newTarget = CheckForPathObstruction(tile, currentTarget);
+                        if (newTarget.HasValue && newTarget.Value.y != currentTarget.y)
+                        {
+                            // Verify the new target position is actually empty (or already ours)
+                            GameObject atNewTarget = grid[newTarget.Value.x, newTarget.Value.y];
+                            if (atNewTarget == null || atNewTarget == tile)
+                            {
+                                // Path is blocked! Update our target to land on top of the obstruction
+                                Vector2Int oldTarget = currentTarget;
+                                currentTarget = newTarget.Value;
+                                
+                                // Update grid array: remove from old target, place at new target
+                                if (grid[oldTarget.x, oldTarget.y] == tile)
+                                {
+                                    grid[oldTarget.x, oldTarget.y] = null;
+                                }
+                                grid[currentTarget.x, currentTarget.y] = tile;
+                                
+                                // Update tile's grid coordinates
+                                Tile tileScript = tile.GetComponent<Tile>();
+                                tileScript.Initialize(currentTarget.x, currentTarget.y, tileScript.TileType, this);
+                                
+                                // Update tracking - mark as retargeted so tiles above us know to land on top
+                                droppingTargets[tile] = currentTarget;
+                                retargetedDrops.Add(tile);
+                                
+                                // Recalculate duration based on new shorter distance from CURRENT position
+                                Vector3 currentPos = tile.transform.position;
+                                float newTargetY = currentTarget.y * tileSize + gridRiser.CurrentGridOffset;
+                                float remainingDistance = Mathf.Abs(currentPos.y - newTargetY) / tileSize;
+                                
+                                // Reset animation with current position as new start
+                                startWorldPos = currentPos;
+                                targetY = newTargetY;
+                                duration = dropDuration * remainingDistance;
+                                elapsed = 0;
+                                
+                                Debug.Log($"[Drop] Path obstructed! Retargeting from ({oldTarget.x}, {oldTarget.y}) to ({currentTarget.x}, {currentTarget.y})");
+                            }
+                        }
+                    }
+                }
+                
                 // Track progress for Block Slip mechanic
-                float progress = elapsed / duration;
+                float progress = duration > 0 ? elapsed / duration : 1f;
                 droppingProgress[tile] = progress;
 
                 // Calculate target position dynamically using current grid offset
-                Vector3 targetWorldPos = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+                Vector3 targetWorldPos = new Vector3(currentTarget.x * tileSize, currentTarget.y * tileSize + gridRiser.CurrentGridOffset, 0);
                 tile.transform.position = Vector3.Lerp(startWorldPos, targetWorldPos, progress);
                 elapsed += Time.deltaTime;
                 yield return null;
             }
 
-            // Final position snap
-            if (tile != null)
+            // Final position snap - only if we're still the current animation
+            if (tile != null && dropAnimationVersion.GetValueOrDefault(tile, 0) == myVersion)
             {
-                tile.transform.position = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+                tile.transform.position = new Vector3(currentTarget.x * tileSize, currentTarget.y * tileSize + gridRiser.CurrentGridOffset, 0);
 
                 Tile tileScript = tile.GetComponent<Tile>();
                 if (tileScript != null)
@@ -833,12 +910,92 @@ public class GridManager : MonoBehaviour
         }
         finally
         {
-            // ALWAYS remove from dropping set and restore sorting order
-            droppingTiles.Remove(tile);
-            droppingProgress.Remove(tile);
-            droppingTargets.Remove(tile);
-            if (sr != null) sr.sortingOrder = originalSortingOrder;
+            // Only clean up if we're still the current version (no new animation took over)
+            if (dropAnimationVersion.GetValueOrDefault(tile, 0) == myVersion)
+            {
+                droppingTiles.Remove(tile);
+                droppingProgress.Remove(tile);
+                droppingTargets.Remove(tile);
+                dropAnimationVersion.Remove(tile);
+                retargetedDrops.Remove(tile);
+                if (sr != null) sr.sortingOrder = originalSortingOrder;
+            }
+            // If version doesn't match, a new animation took over - don't touch anything
         }
+    }
+
+    /// <summary>
+    /// Checks if there's now a block obstructing the path between the tile's current position and target.
+    /// Returns a new target position (one above the obstruction) if blocked, or null if path is clear.
+    /// </summary>
+    Vector2Int? CheckForPathObstruction(GameObject tile, Vector2Int targetPos)
+    {
+        if (tile == null) return null;
+        
+        // Get current world Y and convert to grid Y
+        float currentWorldY = tile.transform.position.y;
+        int currentGridY = Mathf.RoundToInt((currentWorldY - gridRiser.CurrentGridOffset) / tileSize);
+        
+        // Clamp to valid range
+        currentGridY = Mathf.Clamp(currentGridY, 0, gridHeight - 1);
+        
+        int x = targetPos.x;
+        
+        // Check from just below current position down to target
+        // We loop top-to-bottom to find the HIGHEST obstruction first
+        for (int y = currentGridY - 1; y >= targetPos.y; y--)
+        {
+            if (y >= 0 && y < gridHeight)
+            {
+                GameObject blockAtPos = grid[x, y];
+                
+                if (blockAtPos != null && blockAtPos != tile)
+                {
+                    bool isSolidObstruction = false;
+                    
+                    if (droppingTiles.Contains(blockAtPos))
+                    {
+                        // This block is dropping - only treat as obstruction if it was RETARGETED
+                        // (Original drops from DropTiles were planned together and don't conflict)
+                        if (retargetedDrops.Contains(blockAtPos))
+                        {
+                            // Retargeted tile - check if it's landing at or above this Y
+                            if (droppingTargets.TryGetValue(blockAtPos, out Vector2Int otherTarget))
+                            {
+                                if (otherTarget.y >= y)
+                                {
+                                    isSolidObstruction = true;
+                                }
+                            }
+                        }
+                        // Non-retargeted dropping tiles are not obstructions
+                    }
+                    else
+                    {
+                        // Not dropping at all = solid obstruction (e.g., Block Slip placed it here)
+                        isSolidObstruction = true;
+                    }
+                    
+                    if (isSolidObstruction)
+                    {
+                        // Found an obstruction! Check if we can land on top of it
+                        int newTargetY = y + 1;
+                        if (newTargetY < gridHeight && newTargetY != targetPos.y)
+                        {
+                            // Verify the landing position is empty or already ours
+                            GameObject atLandingPos = grid[x, newTargetY];
+                            if (atLandingPos == null || atLandingPos == tile)
+                            {
+                                return new Vector2Int(x, newTargetY);
+                            }
+                            // If landing spot is taken by another tile, continue looking for lower obstruction
+                        }
+                    }
+                }
+            }
+        }
+        
+        return null; // Path is clear
     }
 
     IEnumerator MoveTile(GameObject tile, Vector2Int targetPos, bool playLandSound = false)
@@ -872,6 +1029,7 @@ public class GridManager : MonoBehaviour
     public IEnumerator DropTiles()
     {
         List<(GameObject tile, Vector2Int from, Vector2Int to)> drops = new List<(GameObject, Vector2Int, Vector2Int)>();
+        int maxDropDistance = 0;
 
         // Collect all drops first
         for (int x = 0; x < gridWidth; x++)
@@ -885,6 +1043,8 @@ public class GridManager : MonoBehaviour
                         if (grid[x, aboveY] != null)
                         {
                             GameObject tile = grid[x, aboveY];
+                            int dropDistance = aboveY - y;
+                            maxDropDistance = Mathf.Max(maxDropDistance, dropDistance);
                             drops.Add((tile, new Vector2Int(x, aboveY), new Vector2Int(x, y)));
 
                             // Update grid array
@@ -912,10 +1072,11 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        // Only wait if there were actual drops
+        // Wait for the longest drop to complete (plus a small buffer)
         if (drops.Count > 0)
         {
-            yield return new WaitForSeconds(dropDuration * 2f); // Wait for drops to complete
+            float waitTime = dropDuration * maxDropDistance + 0.05f;
+            yield return new WaitForSeconds(waitTime);
         }
     }
 
