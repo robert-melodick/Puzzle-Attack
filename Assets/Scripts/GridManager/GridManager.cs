@@ -17,7 +17,7 @@ public class GridManager : MonoBehaviour
     public float swapDuration = 0.15f; // Time in seconds for swap animation
 
     [Header("Drop Settings")]
-    public float dropDuration = 0.15f; // Time in seconds for drop animation
+    public float dropDuration = 0.15f; // Time in seconds PER TILE UNIT (gravity speed)
 
     [Header("Components")]
     public CursorController cursorController;
@@ -574,7 +574,16 @@ public class GridManager : MonoBehaviour
             droppingProgress.Remove(fallingBlock);
             droppingTargets.Remove(fallingBlock);
 
-            // Step 2: Update grid array for cascading blocks (from top to bottom to avoid overwrites)
+            // Step 2: PROTECT cascading blocks from GridRiser BEFORE updating grid array
+            foreach (var (tile, from, to) in cascadingBlocks)
+            {
+                if (tile != null)
+                {
+                    swappingTiles.Add(tile);
+                }
+            }
+
+            // Step 3: Update grid array for cascading blocks (from top to bottom to avoid overwrites)
             for (int i = cascadingBlocks.Count - 1; i >= 0; i--)
             {
                 var (tile, from, to) = cascadingBlocks[i];
@@ -582,7 +591,7 @@ public class GridManager : MonoBehaviour
                 grid[from.x, from.y] = null; // Clear old position
             }
 
-            // Step 3: Update grid array for main swap
+            // Step 4: Update grid array for main swap
             // Move swappingBlock to falling block's destination
             grid[fallingBlockPos.x, fallingBlockPos.y] = swappingBlock;
             grid[stationaryBlockOriginalPos.x, stationaryBlockOriginalPos.y] = null;
@@ -603,6 +612,10 @@ public class GridManager : MonoBehaviour
                 Mathf.RoundToInt((fallingBlockCurrentWorldPos.y - gridRiser.CurrentGridOffset) / tileSize)
             );
 
+            // Calculate the distance the falling block needs to travel (for wait time)
+            float fallingBlockDistance = Mathf.Abs(fallingBlockAnimFromPos.y - fallingBlockNewTarget.y);
+            float fallingBlockTravelTime = dropDuration * fallingBlockDistance;
+
             // Update falling block's grid coordinates to new target
             Tile fallingTileScript = fallingBlock.GetComponent<Tile>();
             fallingTileScript.Initialize(fallingBlockNewTarget.x, fallingBlockNewTarget.y, fallingTileScript.TileType, this);
@@ -611,18 +624,14 @@ public class GridManager : MonoBehaviour
             droppingTiles.Add(fallingBlock);
             StartCoroutine(MoveTileDrop(fallingBlock, fallingBlockAnimFromPos, fallingBlockNewTarget));
 
-            // Step 6: Cascade all blocks above upward
+            // Step 6: Cascade all blocks above upward with smooth animation
             foreach (var (tile, from, to) in cascadingBlocks)
             {
                 if (tile != null)
                 {
-                    // Update tile coordinates
-                    Tile tileScript = tile.GetComponent<Tile>();
-                    tileScript.Initialize(to.x, to.y, tileScript.TileType, this);
-
-                    // Animate tile moving up
-                    droppingTiles.Add(tile);
-                    StartCoroutine(MoveTileDrop(tile, from, to));
+                    // Tile is already protected in swappingTiles (added earlier)
+                    // DON'T update coordinates yet - let animation handle it after completion
+                    StartCoroutine(MoveTileCascadeSmooth(tile, to));
 
                     Debug.Log($"[Block Slip Cascade] Tile ({from.x}, {from.y}) → ({to.x}, {to.y})");
                 }
@@ -637,8 +646,8 @@ public class GridManager : MonoBehaviour
             swappingBlock.GetComponent<Tile>().Initialize(fallingBlockPos.x, fallingBlockPos.y, swappingBlock.GetComponent<Tile>().TileType, this);
             swappingBlock.transform.position = new Vector3(fallingBlockPos.x * tileSize, fallingBlockPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
 
-            // Wait for falling block to land
-            yield return new WaitForSeconds(dropDuration);
+            // Wait for falling block to land (using calculated travel time based on distance)
+            yield return new WaitForSeconds(fallingBlockTravelTime);
 
             Debug.Log($"[Block Slip] Complete! Checking for additional drops and matches...");
 
@@ -692,6 +701,63 @@ public class GridManager : MonoBehaviour
         if (sr != null) sr.sortingOrder = originalSortingOrder;
     }
 
+    IEnumerator MoveTileCascadeSmooth(GameObject tile, Vector2Int toPos)
+    {
+        // Smooth upward animation for cascading blocks during Block Slip
+        // Uses actual current world position as start point to prevent lag
+        if (tile == null)
+        {
+            swappingTiles.Remove(tile);
+            yield break;
+        }
+
+        SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+        int originalSortingOrder = sr != null ? sr.sortingOrder : 0;
+
+        // Bring tile to front during cascade
+        if (sr != null) sr.sortingOrder = 10;
+
+        // USE ACTUAL CURRENT POSITION - this prevents lag from coordinate updates
+        Vector3 startWorldPos = tile.transform.position;
+
+        // Calculate duration based on distance (matching gravity speed of drops)
+        Vector3 targetWorldPos = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+        float distance = Mathf.Abs(targetWorldPos.y - startWorldPos.y) / tileSize; // Distance in tile units
+        float duration = dropDuration * distance; // Use same speed as falling blocks
+        float elapsed = 0;
+
+        try
+        {
+            while (elapsed < duration && tile != null)
+            {
+                // Calculate target position dynamically using current grid offset
+                Vector3 calculatedWorldPosition = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+                tile.transform.position = Vector3.Lerp(startWorldPos, calculatedWorldPosition, elapsed / duration);
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            // Final position snap and coordinate update
+            if (tile != null)
+            {
+                // NOW update coordinates after animation completes
+                Tile tileScript = tile.GetComponent<Tile>();
+                tileScript.Initialize(toPos.x, toPos.y, tileScript.TileType, this);
+
+                tile.transform.position = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+
+                // Restore original sorting order
+                if (sr != null) sr.sortingOrder = originalSortingOrder;
+            }
+        }
+        finally
+        {
+            // ALWAYS remove from swapping set and restore sorting order
+            swappingTiles.Remove(tile);
+            if (sr != null) sr.sortingOrder = originalSortingOrder;
+        }
+    }
+
     IEnumerator MoveTileDrop(GameObject tile, Vector2Int fromPos, Vector2Int toPos)
     {
         if (tile == null)
@@ -710,7 +776,10 @@ public class GridManager : MonoBehaviour
         if (sr != null) sr.sortingOrder = 10;
 
         Vector3 startWorldPos = new Vector3(fromPos.x * tileSize, fromPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
-        float duration = dropDuration;
+
+        // Calculate duration based on distance (gravity-based falling)
+        float distance = Mathf.Abs(fromPos.y - toPos.y);
+        float duration = dropDuration * distance; // Time per unit * distance
         float elapsed = 0;
 
         try
