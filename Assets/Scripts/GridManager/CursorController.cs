@@ -8,12 +8,17 @@ public class CursorController : MonoBehaviour
     public Color cursorColor = new Color(1f, 1f, 1f, 0.5f);
     public GameObject cursorPrefab;
 
+    [Header("Block Slip Indicator")]
+    public Color blockSlipColor = new Color(0f, 1f, 0.5f, 0.7f); // Green/cyan glow
+
     private Vector2Int cursorPosition;
     private GameObject cursorVisual;
+    private GameObject blockSlipIndicator;
     private bool usingPrefabCursor = false;
     private GridManager gridManager;
     private float tileSize;
     private float currentGridOffset = 0f;
+    private bool blockSlipActive = false;
 
     public Vector2Int CursorPosition => cursorPosition;
 
@@ -44,7 +49,59 @@ public class CursorController : MonoBehaviour
             usingPrefabCursor = false;
         }
 
+        // Create Block Slip indicator (hidden by default)
+        CreateBlockSlipIndicator();
+
         UpdateCursorPosition(0f);
+    }
+
+    void CreateBlockSlipIndicator()
+    {
+        blockSlipIndicator = new GameObject("BlockSlipIndicator");
+        blockSlipIndicator.transform.SetParent(transform);
+
+        SpriteRenderer sr = blockSlipIndicator.AddComponent<SpriteRenderer>();
+        sr.sprite = CreateBlockSlipSprite();
+        sr.color = blockSlipColor;
+        sr.sortingOrder = 9; // Behind cursor but in front of tiles
+
+        blockSlipIndicator.SetActive(false);
+    }
+
+    Sprite CreateBlockSlipSprite()
+    {
+        // Create a 1x1 unit sprite (100x100 pixels at 100 ppu) that will be scaled to cursor size
+        int size = 100;
+        Texture2D tex = new Texture2D(size, size);
+        Color[] pixels = new Color[size * size];
+
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            pixels[i] = Color.clear;
+        }
+
+        // Create a glowing border effect
+        for (int x = 0; x < size; x++)
+        {
+            for (int y = 0; y < size; y++)
+            {
+                // Outer glow (border)
+                if (x < 5 || x >= size - 5 || y < 5 || y >= size - 5)
+                {
+                    pixels[y * size + x] = Color.white;
+                }
+                // Inner filled area with reduced opacity
+                else if (x >= 5 && x < size - 5 && y >= 5 && y < size - 5)
+                {
+                    pixels[y * size + x] = new Color(1f, 1f, 1f, 0.3f);
+                }
+            }
+        }
+
+        tex.SetPixels(pixels);
+        tex.Apply();
+
+        return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100);
     }
 
     Sprite CreateCursorSprite()
@@ -114,6 +171,26 @@ public class CursorController : MonoBehaviour
         if(!usingPrefabCursor)
         {
             cursorVisual.transform.localScale = new Vector3(cursorWidth * tileSize, cursorHeight * tileSize, 1f);
+        }
+
+        // Update Block Slip indicator position if active
+        if (blockSlipActive && blockSlipIndicator != null)
+        {
+            blockSlipIndicator.transform.position = new Vector3(centerX - 0.5f * tileSize, centerY, -0.5f);
+            blockSlipIndicator.transform.localScale = new Vector3(cursorWidth * tileSize, cursorHeight * tileSize, 1f);
+        }
+    }
+
+    public void SetBlockSlipIndicator(bool active)
+    {
+        blockSlipActive = active;
+        if (blockSlipIndicator != null)
+        {
+            blockSlipIndicator.SetActive(active);
+            if (active)
+            {
+                UpdateCursorPosition(currentGridOffset);
+            }
         }
     }
 

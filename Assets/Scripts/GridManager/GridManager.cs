@@ -16,6 +16,9 @@ public class GridManager : MonoBehaviour
     [Header("Swap Settings")]
     public float swapDuration = 0.15f; // Time in seconds for swap animation
 
+    [Header("Drop Settings")]
+    public float dropDuration = 0.15f; // Time in seconds for drop animation
+
     [Header("Components")]
     public CursorController cursorController;
     public GridRiser gridRiser;
@@ -28,6 +31,10 @@ public class GridManager : MonoBehaviour
     private bool isSwapping = false;
     private HashSet<GameObject> swappingTiles = new HashSet<GameObject>(); // Tiles currently being swapped
     private HashSet<GameObject> droppingTiles = new HashSet<GameObject>(); // Tiles currently dropping
+
+    // Block Slip mechanic: Track drop animation progress and targets
+    private Dictionary<GameObject, float> droppingProgress = new Dictionary<GameObject, float>(); // Animation progress (0-1)
+    private Dictionary<GameObject, Vector2Int> droppingTargets = new Dictionary<GameObject, Vector2Int>(); // Target positions
 
     public bool IsSwapping => isSwapping;
     public bool IsTileSwapping(GameObject tile) => swappingTiles.Contains(tile);
@@ -105,12 +112,35 @@ public class GridManager : MonoBehaviour
         swappingTiles.RemoveWhere(tile => tile == null);
         droppingTiles.RemoveWhere(tile => tile == null);
 
+        // Clean up Block Slip tracking dictionaries
+        List<GameObject> keysToRemove = new List<GameObject>();
+        foreach (var key in droppingProgress.Keys)
+        {
+            if (key == null) keysToRemove.Add(key);
+        }
+        foreach (var key in keysToRemove)
+        {
+            droppingProgress.Remove(key);
+            droppingTargets.Remove(key);
+        }
+
         // Handle cursor input
         cursorController.HandleInput(gridWidth, gridHeight);
+
+        // Check for Block Slip opportunities and update visual indicator
+        UpdateBlockSlipIndicator();
+
+        // DEBUG: Check if input is being detected
+        if (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Space))
+        {
+            Debug.Log($"[INPUT DETECTED] Swap key pressed! isSwapping = {isSwapping}");
+        }
 
         // Swap with Z (primary), K (alternate), or Space
         if (!isSwapping && (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Space)))
         {
+            Debug.Log("=== SWAP KEY PRESSED ===");
+
             Vector2Int cursorPos = cursorController.CursorPosition;
             int leftX = cursorPos.x;
             int rightX = cursorPos.x + 1;
@@ -118,6 +148,8 @@ public class GridManager : MonoBehaviour
 
             GameObject leftTile = grid[leftX, y];
             GameObject rightTile = grid[rightX, y];
+
+            Debug.Log($"Cursor at ({leftX}, {y}), Left tile: {(leftTile != null ? "EXISTS" : "NULL")}, Right tile: {(rightTile != null ? "EXISTS" : "NULL")}");
 
             // Check if tiles are being processed, swapping, or dropping
             bool leftProcessed = matchProcessor.IsTileBeingProcessed(leftX, y);
@@ -127,13 +159,78 @@ public class GridManager : MonoBehaviour
             bool leftDropping = leftTile != null && droppingTiles.Contains(leftTile);
             bool rightDropping = rightTile != null && droppingTiles.Contains(rightTile);
 
-            if (!leftProcessed && !rightProcessed && !leftSwapping && !rightSwapping && !leftDropping && !rightDropping)
+            Debug.Log($"Left [Processed: {leftProcessed}, Swapping: {leftSwapping}, Dropping: {leftDropping}]");
+            Debug.Log($"Right [Processed: {rightProcessed}, Swapping: {rightSwapping}, Dropping: {rightDropping}]");
+
+            // Check for Block Slip opportunities (swapping with a dropping tile <50% into destination)
+            GameObject fallingBlock = null;
+            GameObject swappingBlock = null;
+            Vector2Int fallingBlockPos = Vector2Int.zero;
+            bool canBlockSlip = false;
+
+            // Block Slip should work even if tiles are being processed - only block if actively swapping
+            if (!leftSwapping && !rightSwapping)
             {
+                // Case 1: Left tile is dropping, swap right tile with it
+                if (leftTile != null && leftDropping && rightTile != null && !rightDropping)
+                {
+                    if (droppingTargets.TryGetValue(leftTile, out Vector2Int leftTarget) && leftTarget.x == leftX && leftTarget.y == y)
+                    {
+                        float progress = CalculateProgressIntoDestinationTile(leftTile, leftTarget);
+                        if (progress < 0.5f)
+                        {
+                            Debug.Log($"Block Slip opportunity! Left tile is {progress * 100:F1}% into destination ({leftX}, {y})");
+                            fallingBlock = leftTile;
+                            swappingBlock = rightTile;
+                            fallingBlockPos = new Vector2Int(leftX, y);
+                            canBlockSlip = true;
+                        }
+                        else
+                        {
+                            Debug.Log($"Block Slip blocked - left tile is {progress * 100:F1}% into destination (>= 50%)");
+                        }
+                    }
+                }
+                // Case 2: Right tile is dropping, swap left tile with it
+                else if (rightTile != null && rightDropping && leftTile != null && !leftDropping)
+                {
+                    if (droppingTargets.TryGetValue(rightTile, out Vector2Int rightTarget) && rightTarget.x == rightX && rightTarget.y == y)
+                    {
+                        float progress = CalculateProgressIntoDestinationTile(rightTile, rightTarget);
+                        if (progress < 0.5f)
+                        {
+                            Debug.Log($"Block Slip opportunity! Right tile is {progress * 100:F1}% into destination ({rightX}, {y})");
+                            fallingBlock = rightTile;
+                            swappingBlock = leftTile;
+                            fallingBlockPos = new Vector2Int(rightX, y);
+                            canBlockSlip = true;
+                        }
+                        else
+                        {
+                            Debug.Log($"Block Slip blocked - right tile is {progress * 100:F1}% into destination (>= 50%)");
+                        }
+                    }
+                }
+            }
+
+            Debug.Log($"canBlockSlip: {canBlockSlip}");
+
+            if (canBlockSlip)
+            {
+                Debug.Log(">>> EXECUTING BLOCK SLIP <<<");
+                // Execute Block Slip
+                StartCoroutine(HandleBlockSlip(swappingBlock, fallingBlock, fallingBlockPos));
+            }
+            else if (!leftProcessed && !rightProcessed && !leftSwapping && !rightSwapping && !leftDropping && !rightDropping)
+            {
+                Debug.Log(">>> EXECUTING NORMAL SWAP <<<");
+                // Normal swap
                 StartCoroutine(SwapCursorTiles());
             }
             else
             {
-                Debug.Log("Cannot swap - tiles are being processed, swapping, or dropping!");
+                Debug.Log($">>> SWAP BLOCKED <<<");
+                Debug.Log($"Reason: leftProcessed={leftProcessed}, rightProcessed={rightProcessed}, leftSwapping={leftSwapping}, rightSwapping={rightSwapping}, leftDropping={leftDropping}, rightDropping={rightDropping}");
             }
         }
     }
@@ -215,6 +312,354 @@ public class GridManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Updates the Block Slip visual indicator based on current cursor position
+    /// </summary>
+    void UpdateBlockSlipIndicator()
+    {
+        if (isSwapping)
+        {
+            cursorController.SetBlockSlipIndicator(false);
+            return;
+        }
+
+        Vector2Int cursorPos = cursorController.CursorPosition;
+        int leftX = cursorPos.x;
+        int rightX = cursorPos.x + 1;
+        int y = cursorPos.y;
+
+        GameObject leftTile = grid[leftX, y];
+        GameObject rightTile = grid[rightX, y];
+
+        // DEBUG: Log dropping tiles info every 120 frames (less spam)
+        if (Time.frameCount % 120 == 0 && droppingTiles.Count > 0)
+        {
+            Debug.Log($"=== CURSOR AT ({leftX}, {y}) | Dropping tiles: {droppingTiles.Count} ===");
+            Debug.Log($"Left tile: {(leftTile != null ? "EXISTS" : "NULL")}, Right tile: {(rightTile != null ? "EXISTS" : "NULL")}");
+
+            try
+            {
+                foreach (var tile in droppingTiles)
+                {
+                    if (tile == null)
+                    {
+                        Debug.LogWarning("  Dropping tile is NULL!");
+                        continue;
+                    }
+
+                    bool hasTarget = droppingTargets.TryGetValue(tile, out Vector2Int target);
+                    Debug.Log($"  Tile in droppingTiles, has target in dict: {hasTarget}");
+
+                    if (hasTarget)
+                    {
+                        Tile ts = tile.GetComponent<Tile>();
+                        if (ts != null)
+                        {
+                            Debug.Log($"  Dropping tile at grid ({ts.GridX}, {ts.GridY}) -> target ({target.x}, {target.y})");
+                        }
+                        else
+                        {
+                            Debug.LogWarning("  Dropping tile has no Tile component!");
+                        }
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Error logging dropping tiles: {e.Message}");
+            }
+        }
+
+        // Check if tiles are being processed or in invalid states
+        bool leftProcessed = matchProcessor.IsTileBeingProcessed(leftX, y);
+        bool rightProcessed = matchProcessor.IsTileBeingProcessed(rightX, y);
+        bool leftSwapping = leftTile != null && swappingTiles.Contains(leftTile);
+        bool rightSwapping = rightTile != null && swappingTiles.Contains(rightTile);
+        bool leftDropping = leftTile != null && droppingTiles.Contains(leftTile);
+        bool rightDropping = rightTile != null && droppingTiles.Contains(rightTile);
+
+        // DEBUG: Log tile states at cursor
+        if (Time.frameCount % 60 == 0)
+        {
+            Debug.Log($"Left dropping: {leftDropping}, Right dropping: {rightDropping}");
+            Debug.Log($"Left processed: {leftProcessed}, Right processed: {rightProcessed}");
+            Debug.Log($"Left swapping: {leftSwapping}, Right swapping: {rightSwapping}");
+        }
+
+        // Block Slip should work even if tiles are being processed (they just finished dropping/matching)
+        // Only block if tiles are actively swapping
+        bool canCheckBlockSlip = !leftSwapping && !rightSwapping;
+        bool hasBlockSlipOpportunity = false;
+
+        if (Time.frameCount % 60 == 0)
+        {
+            Debug.Log($"canCheckBlockSlip: {canCheckBlockSlip}");
+        }
+
+        if (canCheckBlockSlip)
+        {
+            // NEW LOGIC: Check if either position has a tile that's currently dropping with <50% progress
+            // Case 1: Left tile is dropping, right has a solid tile
+            if (leftTile != null && leftDropping && rightTile != null && !rightDropping)
+            {
+                // Check if left tile is dropping to this exact position with <50% progress
+                if (droppingTargets.TryGetValue(leftTile, out Vector2Int leftTarget))
+                {
+                    if (leftTarget.x == leftX && leftTarget.y == y)
+                    {
+                        float progress = CalculateProgressIntoDestinationTile(leftTile, leftTarget);
+                        if (progress < 0.5f)
+                        {
+                            hasBlockSlipOpportunity = true;
+                            Debug.Log($"[Block Slip VISUAL] GREEN INDICATOR ON! Progress: {progress * 100:F1}%");
+                        }
+                    }
+                }
+            }
+            // Case 2: Right tile is dropping, left has a solid tile
+            else if (rightTile != null && rightDropping && leftTile != null && !leftDropping)
+            {
+                // Check if right tile is dropping to this exact position with <50% progress
+                if (droppingTargets.TryGetValue(rightTile, out Vector2Int rightTarget))
+                {
+                    if (rightTarget.x == rightX && rightTarget.y == y)
+                    {
+                        float progress = CalculateProgressIntoDestinationTile(rightTile, rightTarget);
+                        if (progress < 0.5f)
+                        {
+                            hasBlockSlipOpportunity = true;
+                            Debug.Log($"[Block Slip VISUAL] GREEN INDICATOR ON! Progress: {progress * 100:F1}%");
+                        }
+                    }
+                }
+            }
+        }
+
+        cursorController.SetBlockSlipIndicator(hasBlockSlipOpportunity);
+    }
+
+    /// <summary>
+    /// Checks if a tile is falling into the specified position with <50% progress INTO the destination tile
+    /// Returns the falling tile if Block Slip is possible, null otherwise
+    /// </summary>
+    GameObject CheckBlockSlipOpportunity(int x, int y, bool showDebug = true)
+    {
+        Vector2Int targetPos = new Vector2Int(x, y);
+
+        // Find any tile that's falling into this position
+        foreach (var kvp in droppingTargets)
+        {
+            GameObject droppingTile = kvp.Key;
+            Vector2Int tileTarget = kvp.Value;
+
+            // Check if this tile is falling into the target position
+            if (tileTarget.x == x && tileTarget.y == y)
+            {
+                // Calculate progress INTO the destination tile (not overall animation progress)
+                float progressIntoTile = CalculateProgressIntoDestinationTile(droppingTile, tileTarget);
+
+                if (progressIntoTile < 0.5f)
+                {
+                    if (showDebug)
+                    {
+                        Debug.Log($"Block Slip opportunity detected! Tile is {progressIntoTile * 100:F1}% into destination tile ({x}, {y})");
+                    }
+                    return droppingTile;
+                }
+                else
+                {
+                    if (showDebug)
+                    {
+                        Debug.Log($"Block Slip blocked - tile is {progressIntoTile * 100:F1}% into destination tile (>= 50%)");
+                    }
+                    return null;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Calculates how far (0-1) a falling tile has entered its destination tile
+    /// 0 = just entering top of destination, 1 = landed at bottom
+    /// </summary>
+    float CalculateProgressIntoDestinationTile(GameObject tile, Vector2Int destinationPos)
+    {
+        if (tile == null) return 1f; // Assume fully in if null
+
+        float currentY = tile.transform.position.y;
+
+        // Top of destination tile (where tile enters)
+        float destinationTop = (destinationPos.y + 1) * tileSize + gridRiser.CurrentGridOffset;
+
+        // Bottom of destination tile (where tile lands)
+        float destinationBottom = destinationPos.y * tileSize + gridRiser.CurrentGridOffset;
+
+        // Calculate progress into tile
+        float progressIntoTile = (destinationTop - currentY) / tileSize;
+
+        // Clamp to 0-1 range
+        progressIntoTile = Mathf.Clamp01(progressIntoTile);
+
+        return progressIntoTile;
+    }
+
+    /// <summary>
+    /// Executes the Block Slip mechanic:
+    /// - Swaps swappingBlock into fallingBlockPos (where the falling tile was going)
+    /// - Redirects fallingBlock upward to its current position above the stationary block
+    /// </summary>
+    IEnumerator HandleBlockSlip(GameObject swappingBlock, GameObject fallingBlock, Vector2Int fallingBlockPos)
+    {
+        isSwapping = true;
+        Debug.Log($"[Block Slip] Executing! Swapping block into ({fallingBlockPos.x}, {fallingBlockPos.y})");
+
+        // Get the current position of swappingBlock
+        Vector2Int? swappingBlockPos = FindTilePosition(swappingBlock);
+        if (!swappingBlockPos.HasValue)
+        {
+            Debug.LogError("[Block Slip] Failed - couldn't find swapping block position!");
+            isSwapping = false;
+            yield break;
+        }
+
+        Vector2Int stationaryBlockOriginalPos = swappingBlockPos.Value;
+
+        // Falling block will go directly above the stationary block's new position
+        Vector2Int fallingBlockNewTarget = new Vector2Int(fallingBlockPos.x, fallingBlockPos.y + 1);
+
+        // Collect all blocks that need to cascade upward (starting from where falling block will land)
+        List<(GameObject tile, Vector2Int from, Vector2Int to)> cascadingBlocks = new List<(GameObject, Vector2Int, Vector2Int)>();
+
+        int currentY = fallingBlockNewTarget.y;
+        while (currentY < gridHeight)
+        {
+            GameObject blockAtPosition = grid[fallingBlockPos.x, currentY];
+
+            if (blockAtPosition != null && blockAtPosition != fallingBlock)
+            {
+                // This block needs to shift up by 1
+                int newY = currentY + 1;
+
+                // Check if we can shift this block up
+                if (newY >= gridHeight)
+                {
+                    Debug.LogWarning($"[Block Slip] Cannot cascade - block at ({fallingBlockPos.x}, {currentY}) would go out of bounds. Canceling Block Slip.");
+                    isSwapping = false;
+                    yield break;
+                }
+
+                cascadingBlocks.Add((blockAtPosition, new Vector2Int(fallingBlockPos.x, currentY), new Vector2Int(fallingBlockPos.x, newY)));
+                currentY++;
+            }
+            else
+            {
+                // Empty space or falling block itself, stop cascading
+                break;
+            }
+        }
+
+        Debug.Log($"[Block Slip] Stationary block ({stationaryBlockOriginalPos.x}, {stationaryBlockOriginalPos.y}) → ({fallingBlockPos.x}, {fallingBlockPos.y})");
+        Debug.Log($"[Block Slip] Falling block → ({fallingBlockNewTarget.x}, {fallingBlockNewTarget.y})");
+        Debug.Log($"[Block Slip] Cascading {cascadingBlocks.Count} blocks upward");
+
+        // Mark tiles as swapping/dropping
+        if (swappingBlock != null) swappingTiles.Add(swappingBlock);
+
+        try
+        {
+            // Step 1: Stop the falling block's animation
+            droppingTiles.Remove(fallingBlock);
+            droppingProgress.Remove(fallingBlock);
+            droppingTargets.Remove(fallingBlock);
+
+            // Step 2: Update grid array for cascading blocks (from top to bottom to avoid overwrites)
+            for (int i = cascadingBlocks.Count - 1; i >= 0; i--)
+            {
+                var (tile, from, to) = cascadingBlocks[i];
+                grid[to.x, to.y] = tile;
+                grid[from.x, from.y] = null; // Clear old position
+            }
+
+            // Step 3: Update grid array for main swap
+            // Move swappingBlock to falling block's destination
+            grid[fallingBlockPos.x, fallingBlockPos.y] = swappingBlock;
+            grid[stationaryBlockOriginalPos.x, stationaryBlockOriginalPos.y] = null;
+
+            // Place falling block at its new target position (directly above stationary)
+            grid[fallingBlockNewTarget.x, fallingBlockNewTarget.y] = fallingBlock;
+
+            // Step 4: Animate swappingBlock to falling block's original destination
+            StartCoroutine(MoveTileSwap(swappingBlock, fallingBlockPos));
+
+            // Step 5: Redirect fallingBlock upward to new target
+            // Get falling block's current world position (mid-animation)
+            Vector3 fallingBlockCurrentWorldPos = fallingBlock.transform.position;
+
+            // Calculate "from" position for animation based on current world position
+            Vector2Int fallingBlockAnimFromPos = new Vector2Int(
+                Mathf.RoundToInt(fallingBlockCurrentWorldPos.x / tileSize),
+                Mathf.RoundToInt((fallingBlockCurrentWorldPos.y - gridRiser.CurrentGridOffset) / tileSize)
+            );
+
+            // Update falling block's grid coordinates to new target
+            Tile fallingTileScript = fallingBlock.GetComponent<Tile>();
+            fallingTileScript.Initialize(fallingBlockNewTarget.x, fallingBlockNewTarget.y, fallingTileScript.TileType, this);
+
+            // Start drop animation from current position to new target
+            droppingTiles.Add(fallingBlock);
+            StartCoroutine(MoveTileDrop(fallingBlock, fallingBlockAnimFromPos, fallingBlockNewTarget));
+
+            // Step 6: Cascade all blocks above upward
+            foreach (var (tile, from, to) in cascadingBlocks)
+            {
+                if (tile != null)
+                {
+                    // Update tile coordinates
+                    Tile tileScript = tile.GetComponent<Tile>();
+                    tileScript.Initialize(to.x, to.y, tileScript.TileType, this);
+
+                    // Animate tile moving up
+                    droppingTiles.Add(tile);
+                    StartCoroutine(MoveTileDrop(tile, from, to));
+
+                    Debug.Log($"[Block Slip Cascade] Tile ({from.x}, {from.y}) → ({to.x}, {to.y})");
+                }
+            }
+
+            Debug.Log($"[Block Slip] Animations started. Waiting for completion...");
+
+            // Wait for swap animation to complete
+            yield return new WaitForSeconds(swapDuration);
+
+            // Snap swappingBlock to final position and update coordinates
+            swappingBlock.GetComponent<Tile>().Initialize(fallingBlockPos.x, fallingBlockPos.y, swappingBlock.GetComponent<Tile>().TileType, this);
+            swappingBlock.transform.position = new Vector3(fallingBlockPos.x * tileSize, fallingBlockPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+
+            // Wait for falling block to land
+            yield return new WaitForSeconds(dropDuration);
+
+            Debug.Log($"[Block Slip] Complete! Checking for additional drops and matches...");
+
+            // Drop any other tiles that can fall
+            yield return StartCoroutine(DropTiles());
+
+            // Check for matches
+            List<GameObject> matches = matchDetector.GetAllMatches();
+            if (matches.Count > 0 && !matchProcessor.IsProcessingMatches)
+            {
+                StartCoroutine(matchProcessor.ProcessMatches(matches));
+            }
+        }
+        finally
+        {
+            // Cleanup
+            swappingTiles.Remove(swappingBlock);
+            isSwapping = false;
+        }
+    }
+
     IEnumerator MoveTileSwap(GameObject tile, Vector2Int targetPos)
     {
         // Special version for swapping that doesn't rely on tile's GridX/GridY
@@ -255,6 +700,9 @@ public class GridManager : MonoBehaviour
             yield break;
         }
 
+        // Track target position for Block Slip mechanic
+        droppingTargets[tile] = toPos;
+
         SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
         int originalSortingOrder = sr != null ? sr.sortingOrder : 0;
 
@@ -262,16 +710,20 @@ public class GridManager : MonoBehaviour
         if (sr != null) sr.sortingOrder = 10;
 
         Vector3 startWorldPos = new Vector3(fromPos.x * tileSize, fromPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
-        float duration = 0.15f;
+        float duration = dropDuration;
         float elapsed = 0;
 
         try
         {
             while (elapsed < duration && tile != null)
             {
+                // Track progress for Block Slip mechanic
+                float progress = elapsed / duration;
+                droppingProgress[tile] = progress;
+
                 // Calculate target position dynamically using current grid offset
                 Vector3 targetWorldPos = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
-                tile.transform.position = Vector3.Lerp(startWorldPos, targetWorldPos, elapsed / duration);
+                tile.transform.position = Vector3.Lerp(startWorldPos, targetWorldPos, progress);
                 elapsed += Time.deltaTime;
                 yield return null;
             }
@@ -295,6 +747,8 @@ public class GridManager : MonoBehaviour
         {
             // ALWAYS remove from dropping set and restore sorting order
             droppingTiles.Remove(tile);
+            droppingProgress.Remove(tile);
+            droppingTargets.Remove(tile);
             if (sr != null) sr.sortingOrder = originalSortingOrder;
         }
     }
@@ -370,7 +824,11 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        yield return new WaitForSeconds(0.3f);
+        // Only wait if there were actual drops
+        if (drops.Count > 0)
+        {
+            yield return new WaitForSeconds(dropDuration * 2f); // Wait for drops to complete
+        }
     }
 
     public void AddBreathingRoom(int tilesMatched)
