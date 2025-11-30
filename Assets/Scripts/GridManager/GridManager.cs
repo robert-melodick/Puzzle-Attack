@@ -449,11 +449,17 @@ public class GridManager : MonoBehaviour
             droppingProgress.Remove(fallingBlock);
             droppingTargets.Remove(fallingBlock);
 
-            // Step 2: PROTECT cascading blocks from GridRiser BEFORE updating grid array
+            // Step 2: PROTECT cascading blocks from GridRiser AND stop their drop animations
             foreach (var (tile, from, to) in cascadingBlocks)
             {
                 if (tile != null)
                 {
+                    // Stop any existing drop animation for this tile
+                    droppingTiles.Remove(tile);
+                    droppingProgress.Remove(tile);
+                    droppingTargets.Remove(tile);
+
+                    // Protect from GridRiser
                     swappingTiles.Add(tile);
                 }
             }
@@ -503,14 +509,41 @@ public class GridManager : MonoBehaviour
             {
                 if (tile != null)
                 {
-                    // Calculate this block's travel duration
-                    float cascadeDistance = Mathf.Abs(to.y - from.y);
-                    float cascadeDuration = dropDuration * cascadeDistance;
-                    maxCascadeDuration = Mathf.Max(maxCascadeDuration, cascadeDuration);
+                    // Get the tile's current world position
+                    Vector3 currentWorldPos = tile.transform.position;
+                    float currentWorldY = currentWorldPos.y;
 
-                    // Tile is already protected in swappingTiles (added earlier)
-                    // DON'T update coordinates yet - let animation handle it after completion
-                    StartCoroutine(MoveTileCascadeSmooth(tile, to));
+                    // Calculate the new target world position
+                    float targetWorldY = to.y * tileSize + gridRiser.CurrentGridOffset;
+
+                    Debug.Log($"[BlockSlip] Cascading tile at grid {from} -> {to}. CurrentWorldY={currentWorldY:F2}, TargetWorldY={targetWorldY:F2}");
+
+                    // Check if the tile is still above its new target or within threshold
+                    if (currentWorldY > targetWorldY)
+                    {
+                        // Block is still above new target - stop it early at the new target
+                        // Calculate remaining distance to fall to new target
+                        float remainingDistance = (currentWorldY - targetWorldY) / tileSize;
+                        float cascadeDuration = dropDuration * remainingDistance;
+                        maxCascadeDuration = Mathf.Max(maxCascadeDuration, cascadeDuration);
+
+                        Debug.Log($"[BlockSlip] -> Using SMOOTH CASCADE (block above target). Distance={remainingDistance:F2} tiles");
+
+                        // Continue drop to new target position (skip the old position entirely)
+                        StartCoroutine(MoveTileCascadeSmooth(tile, to));
+                    }
+                    else
+                    {
+                        // Block is at or below new target - quick nudge up to new position
+                        float nudgeDistance = Mathf.Abs(currentWorldY - targetWorldY) / tileSize;
+                        float nudgeDuration = dropDuration * nudgeDistance * 0.5f; // Faster nudge (50% of normal speed)
+                        maxCascadeDuration = Mathf.Max(maxCascadeDuration, nudgeDuration);
+
+                        Debug.Log($"[BlockSlip] -> Using QUICK NUDGE (block at/below target). Distance={nudgeDistance:F2} tiles");
+
+                        // Quick nudge up to new target (using faster animation)
+                        StartCoroutine(MoveTileCascadeQuickNudge(tile, to));
+                    }
                 }
             }
 
@@ -632,6 +665,65 @@ public class GridManager : MonoBehaviour
         }
     }
 
+    IEnumerator MoveTileCascadeQuickNudge(GameObject tile, Vector2Int toPos)
+    {
+        // Quick upward nudge for blocks that are already at/below their new target position
+        // This is faster than the normal cascade to make the block slip feel snappier
+        if (tile == null)
+        {
+            swappingTiles.Remove(tile);
+            yield break;
+        }
+
+        SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+        int originalSortingOrder = sr != null ? sr.sortingOrder : 0;
+
+        // Bring tile to front during cascade
+        if (sr != null) sr.sortingOrder = 10;
+
+        // Use actual current position
+        Vector3 startWorldPos = tile.transform.position;
+
+        // Calculate target position
+        Vector3 targetWorldPos = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+
+        // Quick nudge duration (50% faster than normal drop speed)
+        float distance = Mathf.Abs(targetWorldPos.y - startWorldPos.y) / tileSize;
+        float duration = dropDuration * distance * 0.5f;
+        float elapsed = 0;
+
+        try
+        {
+            while (elapsed < duration && tile != null)
+            {
+                // Calculate target position dynamically using current grid offset
+                Vector3 calculatedWorldPosition = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+                tile.transform.position = Vector3.Lerp(startWorldPos, calculatedWorldPosition, elapsed / duration);
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            // Final position snap and coordinate update
+            if (tile != null)
+            {
+                // Update coordinates after animation completes
+                Tile tileScript = tile.GetComponent<Tile>();
+                tileScript.Initialize(toPos.x, toPos.y, tileScript.TileType, this);
+
+                tile.transform.position = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
+
+                // Restore original sorting order
+                if (sr != null) sr.sortingOrder = originalSortingOrder;
+            }
+        }
+        finally
+        {
+            // ALWAYS remove from swapping set and restore sorting order
+            swappingTiles.Remove(tile);
+            if (sr != null) sr.sortingOrder = originalSortingOrder;
+        }
+    }
+
     /// <summary>
     /// Overload that accepts grid positions - converts to world position and calls main implementation
     /// Used by DropTiles for normal drops (no obstruction checking needed)
@@ -689,7 +781,7 @@ public class GridManager : MonoBehaviour
 
         try
         {
-            while (elapsed < duration && tile != null)
+            while (elapsed < duration && tile != null && droppingTiles.Contains(tile))
             {
                 // Only check for obstructions if enabled (Block Slip scenarios)
                 // Normal drops from DropTiles have pre-calculated non-conflicting paths
