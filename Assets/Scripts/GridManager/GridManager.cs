@@ -26,8 +26,8 @@ public class GridManager : MonoBehaviour
     public MatchProcessor matchProcessor;
     public TileSpawner tileSpawner;
 
-    private GameObject[,] grid;
-    private GameObject[,] preloadGrid; // Extra rows below main grid
+    private GameObject[,] grid;         // Main grid of tiles
+    private GameObject[,] preloadGrid;  // Extra rows below main grid
     private bool isSwapping = false;
     private HashSet<GameObject> swappingTiles = new HashSet<GameObject>(); // Tiles currently being swapped
     private HashSet<GameObject> droppingTiles = new HashSet<GameObject>(); // Tiles currently dropping
@@ -43,6 +43,9 @@ public class GridManager : MonoBehaviour
     public bool IsTileDropping(GameObject tile) => droppingTiles.Contains(tile);
     public bool IsTileAnimating(GameObject tile) => swappingTiles.Contains(tile) || droppingTiles.Contains(tile);
 
+    /// <summary>
+    /// Finds the grid position of a given tile GameObject 
+    /// </summary>
     public Vector2Int? FindTilePosition(GameObject tile)
     {
         if (tile == null) return null;
@@ -131,20 +134,13 @@ public class GridManager : MonoBehaviour
         // Handle cursor input
         cursorController.HandleInput(gridWidth, gridHeight);
 
+        // **Blockslip Debugger** 
         // Check for Block Slip opportunities and update visual indicator
-        UpdateBlockSlipIndicator();
-
-        // DEBUG: Check if input is being detected
-        if (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Space))
-        {
-            Debug.Log($"[INPUT DETECTED] Swap key pressed! isSwapping = {isSwapping}");
-        }
+        // UpdateBlockSlipIndicator();
 
         // Swap with Z (primary), K (alternate), or Space
         if (!isSwapping && (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Space)))
         {
-            Debug.Log("=== SWAP KEY PRESSED ===");
-
             Vector2Int cursorPos = cursorController.CursorPosition;
             int leftX = cursorPos.x;
             int rightX = cursorPos.x + 1;
@@ -153,8 +149,6 @@ public class GridManager : MonoBehaviour
             GameObject leftTile = grid[leftX, y];
             GameObject rightTile = grid[rightX, y];
 
-            Debug.Log($"Cursor at ({leftX}, {y}), Left tile: {(leftTile != null ? "EXISTS" : "NULL")}, Right tile: {(rightTile != null ? "EXISTS" : "NULL")}");
-
             // Check if tiles are being processed, swapping, or dropping
             bool leftProcessed = matchProcessor.IsTileBeingProcessed(leftX, y);
             bool rightProcessed = matchProcessor.IsTileBeingProcessed(rightX, y);
@@ -162,9 +156,6 @@ public class GridManager : MonoBehaviour
             bool rightSwapping = rightTile != null && swappingTiles.Contains(rightTile);
             bool leftDropping = leftTile != null && droppingTiles.Contains(leftTile);
             bool rightDropping = rightTile != null && droppingTiles.Contains(rightTile);
-
-            Debug.Log($"Left [Processed: {leftProcessed}, Swapping: {leftSwapping}, Dropping: {leftDropping}]");
-            Debug.Log($"Right [Processed: {rightProcessed}, Swapping: {rightSwapping}, Dropping: {rightDropping}]");
 
             // Check for Block Slip opportunities (swapping with a dropping tile <50% into destination)
             GameObject fallingBlock = null;
@@ -183,15 +174,10 @@ public class GridManager : MonoBehaviour
                         float progress = CalculateProgressIntoDestinationTile(leftTile, leftTarget);
                         if (progress < 0.5f)
                         {
-                            Debug.Log($"Block Slip opportunity! Left tile is {progress * 100:F1}% into destination ({leftX}, {y})");
                             fallingBlock = leftTile;
                             swappingBlock = rightTile;
                             fallingBlockPos = new Vector2Int(leftX, y);
                             canBlockSlip = true;
-                        }
-                        else
-                        {
-                            Debug.Log($"Block Slip blocked - left tile is {progress * 100:F1}% into destination (>= 50%)");
                         }
                     }
                 }
@@ -203,32 +189,20 @@ public class GridManager : MonoBehaviour
                         float progress = CalculateProgressIntoDestinationTile(rightTile, rightTarget);
                         if (progress < 0.5f)
                         {
-                            Debug.Log($"Block Slip opportunity! Right tile is {progress * 100:F1}% into destination ({rightX}, {y})");
                             fallingBlock = rightTile;
                             swappingBlock = leftTile;
                             fallingBlockPos = new Vector2Int(rightX, y);
                             canBlockSlip = true;
                         }
-                        else
-                        {
-                            Debug.Log($"Block Slip blocked - right tile is {progress * 100:F1}% into destination (>= 50%)");
-                        }
                     }
                 }
             }
-
-            Debug.Log($"canBlockSlip: {canBlockSlip}");
-
             if (canBlockSlip)
             {
-                Debug.Log(">>> EXECUTING BLOCK SLIP <<<");
-                // Execute Block Slip
                 StartCoroutine(HandleBlockSlip(swappingBlock, fallingBlock, fallingBlockPos));
             }
             else if (!leftProcessed && !rightProcessed && !leftSwapping && !rightSwapping && !leftDropping && !rightDropping)
             {
-                Debug.Log(">>> EXECUTING NORMAL SWAP <<<");
-                // Normal swap
                 StartCoroutine(SwapCursorTiles());
             }
             else
@@ -335,45 +309,6 @@ public class GridManager : MonoBehaviour
         GameObject leftTile = grid[leftX, y];
         GameObject rightTile = grid[rightX, y];
 
-        // DEBUG: Log dropping tiles info every 120 frames (less spam)
-        if (Time.frameCount % 120 == 0 && droppingTiles.Count > 0)
-        {
-            Debug.Log($"=== CURSOR AT ({leftX}, {y}) | Dropping tiles: {droppingTiles.Count} ===");
-            Debug.Log($"Left tile: {(leftTile != null ? "EXISTS" : "NULL")}, Right tile: {(rightTile != null ? "EXISTS" : "NULL")}");
-
-            try
-            {
-                foreach (var tile in droppingTiles)
-                {
-                    if (tile == null)
-                    {
-                        Debug.LogWarning("  Dropping tile is NULL!");
-                        continue;
-                    }
-
-                    bool hasTarget = droppingTargets.TryGetValue(tile, out Vector2Int target);
-                    Debug.Log($"  Tile in droppingTiles, has target in dict: {hasTarget}");
-
-                    if (hasTarget)
-                    {
-                        Tile ts = tile.GetComponent<Tile>();
-                        if (ts != null)
-                        {
-                            Debug.Log($"  Dropping tile at grid ({ts.GridX}, {ts.GridY}) -> target ({target.x}, {target.y})");
-                        }
-                        else
-                        {
-                            Debug.LogWarning("  Dropping tile has no Tile component!");
-                        }
-                    }
-                }
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"Error logging dropping tiles: {e.Message}");
-            }
-        }
-
         // Check if tiles are being processed or in invalid states
         bool leftProcessed = matchProcessor.IsTileBeingProcessed(leftX, y);
         bool rightProcessed = matchProcessor.IsTileBeingProcessed(rightX, y);
@@ -382,23 +317,10 @@ public class GridManager : MonoBehaviour
         bool leftDropping = leftTile != null && droppingTiles.Contains(leftTile);
         bool rightDropping = rightTile != null && droppingTiles.Contains(rightTile);
 
-        // DEBUG: Log tile states at cursor
-        if (Time.frameCount % 60 == 0)
-        {
-            Debug.Log($"Left dropping: {leftDropping}, Right dropping: {rightDropping}");
-            Debug.Log($"Left processed: {leftProcessed}, Right processed: {rightProcessed}");
-            Debug.Log($"Left swapping: {leftSwapping}, Right swapping: {rightSwapping}");
-        }
-
         // Block Slip should work even if tiles are being processed (they just finished dropping/matching)
         // Only block if tiles are actively swapping
         bool canCheckBlockSlip = !leftSwapping && !rightSwapping;
         bool hasBlockSlipOpportunity = false;
-
-        if (Time.frameCount % 60 == 0)
-        {
-            Debug.Log($"canCheckBlockSlip: {canCheckBlockSlip}");
-        }
 
         if (canCheckBlockSlip)
         {
@@ -415,7 +337,6 @@ public class GridManager : MonoBehaviour
                         if (progress < 0.5f)
                         {
                             hasBlockSlipOpportunity = true;
-                            Debug.Log($"[Block Slip VISUAL] GREEN INDICATOR ON! Progress: {progress * 100:F1}%");
                         }
                     }
                 }
@@ -432,7 +353,6 @@ public class GridManager : MonoBehaviour
                         if (progress < 0.5f)
                         {
                             hasBlockSlipOpportunity = true;
-                            Debug.Log($"[Block Slip VISUAL] GREEN INDICATOR ON! Progress: {progress * 100:F1}%");
                         }
                     }
                 }
@@ -440,48 +360,6 @@ public class GridManager : MonoBehaviour
         }
 
         cursorController.SetBlockSlipIndicator(hasBlockSlipOpportunity);
-    }
-
-    /// <summary>
-    /// Checks if a tile is falling into the specified position with <50% progress INTO the destination tile
-    /// Returns the falling tile if Block Slip is possible, null otherwise
-    /// </summary>
-    GameObject CheckBlockSlipOpportunity(int x, int y, bool showDebug = true)
-    {
-        Vector2Int targetPos = new Vector2Int(x, y);
-
-        // Find any tile that's falling into this position
-        foreach (var kvp in droppingTargets)
-        {
-            GameObject droppingTile = kvp.Key;
-            Vector2Int tileTarget = kvp.Value;
-
-            // Check if this tile is falling into the target position
-            if (tileTarget.x == x && tileTarget.y == y)
-            {
-                // Calculate progress INTO the destination tile (not overall animation progress)
-                float progressIntoTile = CalculateProgressIntoDestinationTile(droppingTile, tileTarget);
-
-                if (progressIntoTile < 0.5f)
-                {
-                    if (showDebug)
-                    {
-                        Debug.Log($"Block Slip opportunity detected! Tile is {progressIntoTile * 100:F1}% into destination tile ({x}, {y})");
-                    }
-                    return droppingTile;
-                }
-                else
-                {
-                    if (showDebug)
-                    {
-                        Debug.Log($"Block Slip blocked - tile is {progressIntoTile * 100:F1}% into destination tile (>= 50%)");
-                    }
-                    return null;
-                }
-            }
-        }
-
-        return null;
     }
 
     /// <summary>
@@ -517,13 +395,11 @@ public class GridManager : MonoBehaviour
     IEnumerator HandleBlockSlip(GameObject swappingBlock, GameObject fallingBlock, Vector2Int fallingBlockPos)
     {
         isSwapping = true;
-        Debug.Log($"[Block Slip] Executing! Swapping block into ({fallingBlockPos.x}, {fallingBlockPos.y})");
 
         // Get the current position of swappingBlock
         Vector2Int? swappingBlockPos = FindTilePosition(swappingBlock);
         if (!swappingBlockPos.HasValue)
         {
-            Debug.LogError("[Block Slip] Failed - couldn't find swapping block position!");
             isSwapping = false;
             yield break;
         }
@@ -549,7 +425,6 @@ public class GridManager : MonoBehaviour
                 // Check if we can shift this block up
                 if (newY >= gridHeight)
                 {
-                    Debug.LogWarning($"[Block Slip] Cannot cascade - block at ({fallingBlockPos.x}, {currentY}) would go out of bounds. Canceling Block Slip.");
                     isSwapping = false;
                     yield break;
                 }
@@ -563,10 +438,6 @@ public class GridManager : MonoBehaviour
                 break;
             }
         }
-
-        Debug.Log($"[Block Slip] Stationary block ({stationaryBlockOriginalPos.x}, {stationaryBlockOriginalPos.y}) -> ({fallingBlockPos.x}, {fallingBlockPos.y})");
-        Debug.Log($"[Block Slip] Falling block -> ({fallingBlockNewTarget.x}, {fallingBlockNewTarget.y})");
-        Debug.Log($"[Block Slip] Cascading {cascadingBlocks.Count} blocks upward");
 
         // Mark tiles as swapping/dropping
         if (swappingBlock != null) swappingTiles.Add(swappingBlock);
@@ -640,12 +511,8 @@ public class GridManager : MonoBehaviour
                     // Tile is already protected in swappingTiles (added earlier)
                     // DON'T update coordinates yet - let animation handle it after completion
                     StartCoroutine(MoveTileCascadeSmooth(tile, to));
-
-                    Debug.Log($"[Block Slip Cascade] Tile ({from.x}, {from.y}) -> ({to.x}, {to.y})");
                 }
             }
-
-            Debug.Log($"[Block Slip] Animations started. Waiting for completion...");
 
             // Wait for swap animation to complete
             yield return new WaitForSeconds(swapDuration);
@@ -657,8 +524,6 @@ public class GridManager : MonoBehaviour
             // Wait for the longest animation (falling block OR cascading blocks) to complete
             float longestAnimationTime = Mathf.Max(fallingBlockTravelTime, maxCascadeDuration);
             yield return new WaitForSeconds(longestAnimationTime);
-
-            Debug.Log($"[Block Slip] Complete! Checking for additional drops and matches...");
 
             // Drop any other tiles that can fall
             yield return StartCoroutine(DropTiles());
@@ -996,34 +861,6 @@ public class GridManager : MonoBehaviour
         }
         
         return null; // Path is clear
-    }
-
-    IEnumerator MoveTile(GameObject tile, Vector2Int targetPos, bool playLandSound = false)
-    {
-        if (tile == null) yield break;
-
-        Vector3 targetWorldPos = new Vector3(targetPos.x * tileSize, targetPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
-        float duration = 0.15f;
-        float elapsed = 0;
-        Vector3 startPos = tile.transform.position;
-
-        while (elapsed < duration)
-        {
-            tile.transform.position = Vector3.Lerp(startPos, targetWorldPos, elapsed / duration);
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        tile.transform.position = targetWorldPos;
-
-        if (playLandSound)
-        {
-            Tile tileScript = tile.GetComponent<Tile>();
-            if (tileScript != null)
-            {
-                tileScript.PlayLandSound();
-            }
-        }
     }
 
     public IEnumerator DropTiles()
