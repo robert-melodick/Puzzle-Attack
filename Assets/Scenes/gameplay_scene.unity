@@ -224,7 +224,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5621434329977911287, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
       propertyPath: orthographic size
-      value: 1.390625
+      value: 1.34375
       objectReference: {fileID: 0}
     - target: {fileID: 7007122242791172411, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
       propertyPath: m_Name
@@ -472,7 +472,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_UiScaleMode: 1
-  m_ReferencePixelsPerUnit: 64
+  m_ReferencePixelsPerUnit: 32
   m_ScaleFactor: 1
   m_ReferenceResolution: {x: 1920, y: 1080}
   m_ScreenMatchMode: 0
@@ -1014,12 +1014,16 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 157685461}
     - target: {fileID: 2877464028446485601, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: dropDuration
+      value: 0.15
+      objectReference: {fileID: 0}
+    - target: {fileID: 2877464028446485601, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: scoreManager
       value: 
       objectReference: {fileID: 1271421759}
     - target: {fileID: 2877464028446485601, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: swapDuration
-      value: 0.05
+      value: 0.1
       objectReference: {fileID: 0}
     - target: {fileID: 2877464028446485601, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: matchDetector
@@ -1043,7 +1047,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: normalRiseSpeed
-      value: 0.5
+      value: 0.25
       objectReference: {fileID: 0}
     - target: {fileID: 5347899561248015888, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: scoreManager

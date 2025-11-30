@@ -29,6 +29,8 @@ public class GridManager : MonoBehaviour
     private GameObject[,] grid;         // Main grid of tiles
     private GameObject[,] preloadGrid;  // Extra rows below main grid
     private bool isSwapping = false;
+
+    // Animated Tile Tracking
     private HashSet<GameObject> swappingTiles = new HashSet<GameObject>(); // Tiles currently being swapped
     private HashSet<GameObject> droppingTiles = new HashSet<GameObject>(); // Tiles currently dropping
 
@@ -409,9 +411,45 @@ public class GridManager : MonoBehaviour
         // Falling block will go directly above the stationary block's new position
         Vector2Int fallingBlockNewTarget = new Vector2Int(fallingBlockPos.x, fallingBlockPos.y + 1);
 
-        // Collect all blocks that need to cascade upward (starting from where falling block will land)
+        // Collect all blocks that need to cascade upward
+        // This includes blocks at/above the slip point AND falling blocks below it in the same column
         List<(GameObject tile, Vector2Int from, Vector2Int to)> cascadingBlocks = new List<(GameObject, Vector2Int, Vector2Int)>();
 
+        Debug.Log($"[BlockSlip] Collecting cascading blocks in column {fallingBlockPos.x}");
+        Debug.Log($"[BlockSlip] Falling block is at grid[{fallingBlockPos.x}, {fallingBlockPos.y}], will redirect to ({fallingBlockPos.x}, {fallingBlockNewTarget.y})");
+
+        // First, let's see what's in the grid (for debugging)
+        Debug.Log($"[BlockSlip DEBUG] Checking entire column {fallingBlockPos.x}:");
+        for (int debugY = 0; debugY < gridHeight; debugY++)
+        {
+            GameObject debugBlock = grid[fallingBlockPos.x, debugY];
+            if (debugBlock != null)
+            {
+                bool isDropping = droppingTiles.Contains(debugBlock);
+                bool isFallingBlock = debugBlock == fallingBlock;
+                Vector2Int? dropTarget = droppingTargets.ContainsKey(debugBlock) ? droppingTargets[debugBlock] : null;
+                Vector3 worldPos = debugBlock.transform.position;
+                Tile tileScript = debugBlock.GetComponent<Tile>();
+                Vector2Int tileGridPos = new Vector2Int(tileScript.GridX, tileScript.GridY);
+                Debug.Log($"[BlockSlip DEBUG] grid[{fallingBlockPos.x}, {debugY}] = {debugBlock.name}, WorldY={worldPos.y:F2}, TileGridPos={tileGridPos}, IsDropping={isDropping}, IsFallingBlock={isFallingBlock}, DropTarget={dropTarget}");
+            }
+        }
+
+        // Collect falling blocks BELOW the slip point that are part of the same falling column
+        // These need to cascade up because we're inserting a block below them
+        for (int y = 0; y < fallingBlockPos.y; y++)
+        {
+            GameObject blockBelow = grid[fallingBlockPos.x, y];
+            if (blockBelow != null && droppingTiles.Contains(blockBelow))
+            {
+                // This block is falling and is below the slip point - it needs to cascade up
+                int newY = y + 1;
+                Debug.Log($"[BlockSlip] Found falling block BELOW slip point at grid ({fallingBlockPos.x}, {y}) -> ({fallingBlockPos.x}, {newY}). Will cascade up.");
+                cascadingBlocks.Add((blockBelow, new Vector2Int(fallingBlockPos.x, y), new Vector2Int(fallingBlockPos.x, newY)));
+            }
+        }
+
+        // Now collect blocks at/above the new target position
         int currentY = fallingBlockNewTarget.y;
         while (currentY < gridHeight)
         {
@@ -429,15 +467,22 @@ public class GridManager : MonoBehaviour
                     yield break;
                 }
 
+                bool isDropping = droppingTiles.Contains(blockAtPosition);
+                Debug.Log($"[BlockSlip] Found cascading block at grid ({fallingBlockPos.x}, {currentY}) -> ({fallingBlockPos.x}, {newY}). IsDropping={isDropping}");
+
                 cascadingBlocks.Add((blockAtPosition, new Vector2Int(fallingBlockPos.x, currentY), new Vector2Int(fallingBlockPos.x, newY)));
                 currentY++;
             }
             else
             {
                 // Empty space or falling block itself, stop cascading
+                string reason = blockAtPosition == null ? "null" : "falling block";
+                Debug.Log($"[BlockSlip] Stopping cascade collection at Y={currentY} ({reason})");
                 break;
             }
         }
+
+        Debug.Log($"[BlockSlip] Total cascading blocks: {cascadingBlocks.Count}");
 
         // Mark tiles as swapping/dropping
         if (swappingBlock != null) swappingTiles.Add(swappingBlock);
@@ -449,6 +494,9 @@ public class GridManager : MonoBehaviour
             droppingProgress.Remove(fallingBlock);
             droppingTargets.Remove(fallingBlock);
 
+            // Increment version to invalidate the old drop animation
+            dropAnimationVersion[fallingBlock] = dropAnimationVersion.GetValueOrDefault(fallingBlock, 0) + 1;
+
             // Step 2: PROTECT cascading blocks from GridRiser AND stop their drop animations
             foreach (var (tile, from, to) in cascadingBlocks)
             {
@@ -458,6 +506,10 @@ public class GridManager : MonoBehaviour
                     droppingTiles.Remove(tile);
                     droppingProgress.Remove(tile);
                     droppingTargets.Remove(tile);
+
+                    // Increment version to invalidate the old drop animation
+                    // This prevents the old MoveTileDrop from doing final position snap
+                    dropAnimationVersion[tile] = dropAnimationVersion.GetValueOrDefault(tile, 0) + 1;
 
                     // Protect from GridRiser
                     swappingTiles.Add(tile);
@@ -502,9 +554,15 @@ public class GridManager : MonoBehaviour
             droppingTiles.Add(fallingBlock);
             StartCoroutine(MoveTileDrop(fallingBlock, fallingBlockCurrentWorldPos, fallingBlockNewTarget));
 
-            // Step 6: Cascade all blocks above upward with smooth animation
-            // Also track max cascade duration to ensure we wait long enough
+            // Step 6: Wait one frame to ensure old drop animations have exited cleanly
+            yield return null;
+
+            // Step 7: Cascade all blocks above upward with smooth animation
+            // Capture all positions and start all animations in the same frame for consistency
             float maxCascadeDuration = 0f;
+            List<(GameObject tile, Vector2Int to, bool useQuickNudge)> animationPlan = new List<(GameObject, Vector2Int, bool)>();
+
+            // First pass: Capture positions and decide on animation type
             foreach (var (tile, from, to) in cascadingBlocks)
             {
                 if (tile != null)
@@ -522,28 +580,54 @@ public class GridManager : MonoBehaviour
                     if (currentWorldY > targetWorldY)
                     {
                         // Block is still above new target - stop it early at the new target
-                        // Calculate remaining distance to fall to new target
                         float remainingDistance = (currentWorldY - targetWorldY) / tileSize;
                         float cascadeDuration = dropDuration * remainingDistance;
                         maxCascadeDuration = Mathf.Max(maxCascadeDuration, cascadeDuration);
 
-                        Debug.Log($"[BlockSlip] -> Using SMOOTH CASCADE (block above target). Distance={remainingDistance:F2} tiles");
-
-                        // Continue drop to new target position (skip the old position entirely)
-                        StartCoroutine(MoveTileCascadeSmooth(tile, to));
+                        Debug.Log($"[BlockSlip] -> Using SMOOTH CASCADE (block above target). Distance={remainingDistance:F2} tiles, Duration={cascadeDuration:F2}s");
+                        animationPlan.Add((tile, to, false));
                     }
                     else
                     {
                         // Block is at or below new target - quick nudge up to new position
                         float nudgeDistance = Mathf.Abs(currentWorldY - targetWorldY) / tileSize;
-                        float nudgeDuration = dropDuration * nudgeDistance * 0.5f; // Faster nudge (50% of normal speed)
+                        float nudgeDuration = dropDuration * nudgeDistance * 0.5f;
                         maxCascadeDuration = Mathf.Max(maxCascadeDuration, nudgeDuration);
 
-                        Debug.Log($"[BlockSlip] -> Using QUICK NUDGE (block at/below target). Distance={nudgeDistance:F2} tiles");
-
-                        // Quick nudge up to new target (using faster animation)
-                        StartCoroutine(MoveTileCascadeQuickNudge(tile, to));
+                        Debug.Log($"[BlockSlip] -> Using QUICK NUDGE (block at/below target). Distance={nudgeDistance:F2} tiles, Duration={nudgeDuration:F2}s");
+                        animationPlan.Add((tile, to, true));
                     }
+                }
+            }
+
+            // Second pass: Store original sorting orders, then set new ones for proper layering
+            Dictionary<GameObject, int> originalSortingOrders = new Dictionary<GameObject, int>();
+            for (int i = 0; i < animationPlan.Count; i++)
+            {
+                var (tile, to, useQuickNudge) = animationPlan[i];
+                SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+                if (sr != null)
+                {
+                    // Store original for restoration later
+                    originalSortingOrders[tile] = sr.sortingOrder;
+
+                    // animationPlan is ordered bottom-to-top (collected from low Y to high Y)
+                    // Higher Y positions should get higher sorting order to render in front
+                    // So index 0 (lowest) gets base, index N (highest) gets base + N
+                    sr.sortingOrder = 10 + i;
+                }
+            }
+
+            // Now start the animations
+            foreach (var (tile, to, useQuickNudge) in animationPlan)
+            {
+                if (useQuickNudge)
+                {
+                    StartCoroutine(MoveTileCascadeQuickNudge(tile, to));
+                }
+                else
+                {
+                    StartCoroutine(MoveTileCascadeSmooth(tile, to));
                 }
             }
 
@@ -557,6 +641,21 @@ public class GridManager : MonoBehaviour
             // Wait for the longest animation (falling block OR cascading blocks) to complete
             float longestAnimationTime = Mathf.Max(fallingBlockTravelTime, maxCascadeDuration);
             yield return new WaitForSeconds(longestAnimationTime);
+
+            // Restore original sorting orders for cascading blocks
+            foreach (var kvp in originalSortingOrders)
+            {
+                GameObject tile = kvp.Key;
+                int originalOrder = kvp.Value;
+                if (tile != null)
+                {
+                    SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
+                    if (sr != null)
+                    {
+                        sr.sortingOrder = originalOrder;
+                    }
+                }
+            }
 
             // Drop any other tiles that can fall
             yield return StartCoroutine(DropTiles());
@@ -612,17 +711,12 @@ public class GridManager : MonoBehaviour
     {
         // Smooth upward animation for cascading blocks during Block Slip
         // Uses actual current world position as start point to prevent lag
+        // NOTE: Sorting order is managed by HandleBlockSlip, not here
         if (tile == null)
         {
             swappingTiles.Remove(tile);
             yield break;
         }
-
-        SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
-        int originalSortingOrder = sr != null ? sr.sortingOrder : 0;
-
-        // Bring tile to front during cascade
-        if (sr != null) sr.sortingOrder = 10;
 
         // USE ACTUAL CURRENT POSITION - this prevents lag from coordinate updates
         Vector3 startWorldPos = tile.transform.position;
@@ -652,16 +746,12 @@ public class GridManager : MonoBehaviour
                 tileScript.Initialize(toPos.x, toPos.y, tileScript.TileType, this);
 
                 tile.transform.position = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
-
-                // Restore original sorting order
-                if (sr != null) sr.sortingOrder = originalSortingOrder;
             }
         }
         finally
         {
-            // ALWAYS remove from swapping set and restore sorting order
+            // ALWAYS remove from swapping set
             swappingTiles.Remove(tile);
-            if (sr != null) sr.sortingOrder = originalSortingOrder;
         }
     }
 
@@ -669,17 +759,12 @@ public class GridManager : MonoBehaviour
     {
         // Quick upward nudge for blocks that are already at/below their new target position
         // This is faster than the normal cascade to make the block slip feel snappier
+        // NOTE: Sorting order is managed by HandleBlockSlip, not here
         if (tile == null)
         {
             swappingTiles.Remove(tile);
             yield break;
         }
-
-        SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
-        int originalSortingOrder = sr != null ? sr.sortingOrder : 0;
-
-        // Bring tile to front during cascade
-        if (sr != null) sr.sortingOrder = 10;
 
         // Use actual current position
         Vector3 startWorldPos = tile.transform.position;
@@ -711,16 +796,12 @@ public class GridManager : MonoBehaviour
                 tileScript.Initialize(toPos.x, toPos.y, tileScript.TileType, this);
 
                 tile.transform.position = new Vector3(toPos.x * tileSize, toPos.y * tileSize + gridRiser.CurrentGridOffset, 0);
-
-                // Restore original sorting order
-                if (sr != null) sr.sortingOrder = originalSortingOrder;
             }
         }
         finally
         {
-            // ALWAYS remove from swapping set and restore sorting order
+            // ALWAYS remove from swapping set
             swappingTiles.Remove(tile);
-            if (sr != null) sr.sortingOrder = originalSortingOrder;
         }
     }
 
