@@ -104,22 +104,25 @@ public class WorldMapController : MonoBehaviour
     void UpdateAvailableNodes()
     {
         availableNodes.Clear();
-        
         if (currentNode == null)
             return;
-            
-        foreach (var path in currentNode.connectedPaths)
+
+        // Find all paths in the scene
+        var paths = FindObjectsByType<MapPath>(FindObjectsSortMode.None);
+
+        foreach (var path in paths)
         {
-            if (path.CanTraverse(currentNode))
+            if (!path.CanTraverse(currentNode))
+                continue;
+
+            MapNode destination = path.GetDestination(currentNode);
+            if (destination != null && !availableNodes.Contains(destination))
             {
-                MapNode destination = path.GetDestination(currentNode);
-                if (destination != null && !availableNodes.Contains(destination))
-                {
-                    availableNodes.Add(destination);
-                }
+                availableNodes.Add(destination);
             }
         }
     }
+
     
     void MoveToNode(MapNode targetNode)
     {

@@ -60,52 +60,57 @@ public class MapPath : MonoBehaviour
     }
     
     void SetupLineRenderer()
+{
+    lineRenderer.startWidth = pathWidth;
+    lineRenderer.endWidth = pathWidth;
+    lineRenderer.useWorldSpace = true;
+
+    lineRenderer.sortingLayerName = "Default";
+    lineRenderer.sortingOrder = 1; 
+
+    // Use sharedMaterial in edit mode, material in play mode
+    Material targetMat = Application.isPlaying 
+        ? lineRenderer.material 
+        : lineRenderer.sharedMaterial;
+
+    if (targetMat == null)
     {
-        lineRenderer.startWidth = pathWidth;
-        lineRenderer.endWidth = pathWidth;
-        lineRenderer.useWorldSpace = true;
-
-        // Set sorting layer and order for 2D visibility
-        lineRenderer.sortingLayerName = "Default";
-        lineRenderer.sortingOrder = -1; // Behind nodes
-
-        // Set a default material if none exists
-        if (lineRenderer.material == null || lineRenderer.sharedMaterial == null)
+        Shader shader = Shader.Find("GBA_Sprite");
+        if (shader == null)
         {
-            // Use Unlit/Color shader which works best with LineRenderer
-            Shader shader = Shader.Find("Unlit/Color");
-            if (shader == null)
-            {
-                shader = Shader.Find("Sprites/Default");
-                Debug.LogWarning("Unlit/Color shader not found, using Sprites/Default");
-            }
+            shader = Shader.Find("Sprites/Default");
+            Debug.LogWarning("GBA_Sprite shader not found, using Sprites/Default");
+        }
 
-            if (shader != null)
-            {
-                lineRenderer.material = new Material(shader);
-            }
+        if (shader != null)
+        {
+            targetMat = new Material(shader);
+
+            if (Application.isPlaying)
+                lineRenderer.material = targetMat;      // per-instance at runtime
             else
-            {
-                Debug.LogError("Could not find suitable shader for LineRenderer!");
-            }
+                lineRenderer.sharedMaterial = targetMat; // shared in edit mode
         }
-
-        // IMPORTANT: Set material color to white so it doesn't tint the line
-        if (lineRenderer.material != null)
+        else
         {
-            lineRenderer.material.color = Color.white;
-        }
-
-        // Set vertex colors (these are what actually control the line color)
-        lineRenderer.startColor = visibleColor;
-        lineRenderer.endColor = visibleColor;
-
-        // Only log in play mode to avoid spam in edit mode
-        if (Application.isPlaying)
-        {
-            Debug.Log($"LineRenderer setup: width={pathWidth}, sortingOrder={lineRenderer.sortingOrder}, material={lineRenderer.material?.name}, startColor={lineRenderer.startColor}, endColor={lineRenderer.endColor}");
+            Debug.LogError("Could not find suitable shader for LineRenderer!");
         }
     }
+
+    if (targetMat != null)
+    {
+        targetMat.color = Color.white;
+    }
+
+    lineRenderer.startColor = visibleColor;
+    lineRenderer.endColor = visibleColor;
+
+    if (Application.isPlaying)
+    {
+        Debug.Log($"LineRenderer setup: width={pathWidth}, sortingOrder={lineRenderer.sortingOrder}, material={targetMat?.name}, startColor={lineRenderer.startColor}, endColor={lineRenderer.endColor}");
+    }
+}
+
     
     void GeneratePath()
     {
@@ -192,6 +197,16 @@ public class MapPath : MonoBehaviour
     
     public void UpdateVisibility()
     {
+        // Ensure material color is white (not tinting)
+        Material targetMat = Application.isPlaying 
+            ? lineRenderer.material 
+            : lineRenderer.sharedMaterial;
+
+        if (targetMat != null)
+        {
+            targetMat.color = Color.white;
+        }
+
         if (lineRenderer == null)
             return;
 
