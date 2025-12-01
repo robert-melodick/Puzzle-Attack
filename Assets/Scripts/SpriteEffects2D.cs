@@ -1,4 +1,8 @@
+using System.Collections;
+using System.Threading;
+using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.Animations;
 
 [RequireComponent(typeof(SpriteRenderer))]
 public class SpriteEffects2D : MonoBehaviour
@@ -15,6 +19,8 @@ public class SpriteEffects2D : MonoBehaviour
 
     float flashTimer;
     float flashDuration;
+
+    Coroutine flashCoroutine;
 
     void Awake()
     {
@@ -42,12 +48,49 @@ public class SpriteEffects2D : MonoBehaviour
 
     // --- Public helpers ---
 
-    public void ApplyFlash(Color flashColor, float duration = 0.08f)
+    public void ApplyFlash(Color flashColor, float duration = 0.08f,
+                           bool loop = false, float loopDuration = 1f)
     {
-        flashDuration = duration;
-        flashTimer = duration;
-        mat.SetColor(flashColorID, flashColor);
-        mat.SetFloat(flashAmountID, 1f);
+        // optional: stop any previous flash loop first
+        if (flashCoroutine != null)
+        {
+            StopCoroutine(flashCoroutine);
+            flashCoroutine = null;
+        }
+
+        flashCoroutine = StartCoroutine(FlashRoutine(flashColor, duration, loop, loopDuration));
+    }
+
+    public void StopFlash()
+    {
+        if (flashCoroutine != null)
+        {
+            StopCoroutine(flashCoroutine);
+            flashCoroutine = null;
+        }
+
+        mat.SetFloat(flashAmountID, 0f);
+        flashTimer = 0f;
+    }
+
+    private IEnumerator FlashRoutine(Color flashColor, float duration, bool loop, float loopDuration)
+    {
+        float timer = 0f;
+
+        while (loop && timer < loopDuration)
+        {
+            flashDuration = duration;
+            flashTimer = duration;
+            mat.SetColor(flashColorID, flashColor);
+            mat.SetFloat(flashAmountID, 1f);
+
+            yield return new WaitForSeconds(duration + 0.1f);
+            timer += duration;
+        }
+
+        // make sure it ends turned off
+        mat.SetFloat(flashAmountID, 0f);
+        flashCoroutine = null;
     }
 
     public void SetTint(Color tint, float amount)
