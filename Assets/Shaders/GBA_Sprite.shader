@@ -3,8 +3,8 @@ Shader "Universal Render Pipeline/2D/GBA Sprite"
     Properties
     {
         // Sprite texture and color (SpriteRenderer uses these names)
-        [PerRendererData] _MainTex ("Sprite Texture", 2D) = "white" {}
-        [PerRendererData] _Color ("Tint", Color) = (1,1,1,1)
+        [MainTexture] [NoScaleOffset] _MainTex ("Sprite Texture", 2D) = "white" {}
+        [MainColor] _Color ("Tint", Color) = (1,1,1,1)
 
         // GBA-ish color levels (approx 5-bit per channel)
         _Levels ("Color Levels", Range(2,64)) = 31
@@ -64,7 +64,6 @@ Shader "Universal Render Pipeline/2D/GBA Sprite"
             SAMPLER(sampler_MainTex);
 
             // PROPERTIES
-            float4 _MainTex_ST;
             float4 _Color;
             float4 _RendererColor;
             float4 _Flip;
