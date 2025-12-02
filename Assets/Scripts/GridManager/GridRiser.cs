@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using TMPro;
 
 public class GridRiser : MonoBehaviour
 {
@@ -40,6 +41,13 @@ public class GridRiser : MonoBehaviour
     public float CurrentGridOffset => currentGridOffset;
     public bool IsInGracePeriod => isInGracePeriod;
     public bool IsGameOver => gameOver;
+
+    [SerializeField]
+    private TextMeshProUGUI timeDebtText;
+    [SerializeField]
+    private TextMeshProUGUI breathingRoomText;
+    [SerializeField]
+    private TextMeshProUGUI gracePeriodText;
 
     public void Initialize(GridManager manager, GameObject[,] grid, GameObject[,] preloadGrid, TileSpawner spawner, CursorController cursor, MatchDetector detector, MatchProcessor processor, float tileSize, int gridWidth, int gridHeight)
     {
@@ -81,6 +89,22 @@ public class GridRiser : MonoBehaviour
         float additionalTime = tilesMatched * breathingRoomPerTile;
         breathingRoomTimer = Mathf.Min(breathingRoomTimer + additionalTime, maxBreathingRoom);
         Debug.Log($"Breathing room: +{additionalTime:F2}s for {tilesMatched} tiles (total: {breathingRoomTimer:F2}s)");
+    }
+
+    public void DisplayDebugInfo()
+    {
+        if (timeDebtText != null)
+        {
+            timeDebtText.text = $"Time Debt: {pausedTimeDebt:F2}s";
+        }
+        if (breathingRoomText != null)
+        {
+            breathingRoomText.text = $"Breathing Room: {breathingRoomTimer:F2}s";
+        }
+        if (gracePeriodText != null)
+        {
+            gracePeriodText.text = isInGracePeriod ? $"Grace Period: {gracePeriodTimer:F2}s" : "Grace Period: N/A";
+        }
     }
 
     IEnumerator RiseGrid()

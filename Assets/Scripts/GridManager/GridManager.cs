@@ -171,6 +171,7 @@ public class GridManager : MonoBehaviour
         // blockSlipManager.UpdateBlockSlipIndicator();
 
         HandleSwapInput();
+        gridRiser.DisplayDebugInfo();
     }
 
     #endregion
