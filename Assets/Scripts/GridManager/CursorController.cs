@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class CursorController : MonoBehaviour
+public class CursorController : MonoBehaviour, ICursorCommands
 {
     [Header("Cursor Settings")]
     public int cursorWidth = 2;
@@ -15,7 +15,15 @@ public class CursorController : MonoBehaviour
     private GameObject cursorVisual;
     private GameObject blockSlipIndicator;
     private bool usingPrefabCursor = false;
+
+    [SerializeField]
     private GridManager gridManager;
+    [SerializeField]
+    private GridRiser gridRiser;
+
+    public int GridX { get; private set; }
+    public int GridY { get; private set; }
+
     private float tileSize;
     private float currentGridOffset = 0f;
     private bool blockSlipActive = false;
@@ -26,9 +34,14 @@ public class CursorController : MonoBehaviour
     {
         this.gridManager = manager;
         this.tileSize = tileSize;
+
         cursorPosition = new Vector2Int(0, gridHeight / 2);
+        GridX = cursorPosition.x;
+        GridY = cursorPosition.y;
+
         CreateCursor();
     }
+
 
     void CreateCursor()
     {
@@ -53,6 +66,24 @@ public class CursorController : MonoBehaviour
         CreateBlockSlipIndicator();
 
         UpdateCursorPosition(0f);
+    }
+
+    // Movement commands
+    public void MoveLeft()
+    {
+        MoveCursor(-1, 0);
+    }
+    public void MoveRight()
+    {
+        MoveCursor(1, 0);
+    }
+    public void MoveUp()
+    {
+        MoveCursor(0, 1);
+    }
+    public void MoveDown()
+    {
+        MoveCursor(0, -1);
     }
 
     void CreateBlockSlipIndicator()
@@ -131,34 +162,58 @@ public class CursorController : MonoBehaviour
         return Sprite.Create(tex, new Rect(0, 0, 200, 100), new Vector2(0.5f, 0.5f), 100);
     }
 
-    public void HandleInput(int gridWidth, int gridHeight)
+    public void HandleInput()
     {
         // Cursor movement - Arrow Keys (primary) or WASD (alternate)
         if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
         {
-            MoveCursor(-1, 0, gridWidth, gridHeight);
+            MoveLeft();
         }
         else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D))
         {
-            MoveCursor(1, 0, gridWidth, gridHeight);
+            MoveRight();
         }
         else if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W))
         {
-            MoveCursor(0, 1, gridWidth, gridHeight);
+            MoveUp();
         }
         else if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S))
         {
-            MoveCursor(0, -1, gridWidth, gridHeight);
+            MoveDown();
         }
     }
 
-    void MoveCursor(int deltaX, int deltaY, int gridWidth, int gridHeight)
+    private void MoveCursor(int dx, int dy)
     {
-        int newX = Mathf.Clamp(cursorPosition.x + deltaX, 0, gridWidth - 2);
-        int newY = Mathf.Clamp(cursorPosition.y + deltaY, 0, gridHeight - 1);
+        Debug.Log($"Moving cursor by ({dx}, {dy})");
+
+        // Use current cursorPosition instead of GridX/GridY
+        int newX = Mathf.Clamp(cursorPosition.x + dx, 0, gridManager.gridWidth - 1);
+        int newY = Mathf.Clamp(cursorPosition.y + dy, 0, gridManager.gridHeight - 1);
 
         cursorPosition = new Vector2Int(newX, newY);
+
+        // keep these in sync if other systems use them
+        GridX = newX;
+        GridY = newY;
+
         UpdateCursorPosition(currentGridOffset);
+    }
+
+    public void Swap()
+    {
+        if (gridManager != null)
+        {
+            gridManager.RequestSwapAtCursor();
+        }
+    }
+
+    public void FastRiseGrid()
+    {
+        if (gridManager != null)
+        {
+            gridRiser.RequestFastRise();
+        }
     }
 
     public void UpdateCursorPosition(float gridOffset)

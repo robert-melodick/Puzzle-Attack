@@ -40,6 +40,29 @@ public class MapPath : MonoBehaviour
         }
     }
 
+    public Vector3[] GetPathPoints(MapNode fromNode)
+    {
+        if (lineRenderer == null || lineRenderer.positionCount < 2)
+            return null;
+
+        int count = lineRenderer.positionCount;
+        Vector3[] points = new Vector3[count];
+        for (int i = 0; i < count; i++)
+        {
+            points[i] = lineRenderer.GetPosition(i);
+            points[i].z = 0f; // keep it 2D
+        }
+
+        // If we’re starting from the "end" node, reverse so the order matches movement
+        if (fromNode == endNode)
+        {
+            System.Array.Reverse(points);
+        }
+
+        return points;
+    }
+
+
     void InitializeLineRenderer()
     {
         if (lineRenderer == null)
@@ -60,56 +83,56 @@ public class MapPath : MonoBehaviour
     }
     
     void SetupLineRenderer()
-{
-    lineRenderer.startWidth = pathWidth;
-    lineRenderer.endWidth = pathWidth;
-    lineRenderer.useWorldSpace = true;
-
-    lineRenderer.sortingLayerName = "Default";
-    lineRenderer.sortingOrder = 1; 
-
-    // Use sharedMaterial in edit mode, material in play mode
-    Material targetMat = Application.isPlaying 
-        ? lineRenderer.material 
-        : lineRenderer.sharedMaterial;
-
-    if (targetMat == null)
     {
-        Shader shader = Shader.Find("GBA_Sprite");
-        if (shader == null)
-        {
-            shader = Shader.Find("Sprites/Default");
-            Debug.LogWarning("GBA_Sprite shader not found, using Sprites/Default");
-        }
+        lineRenderer.startWidth = pathWidth;
+        lineRenderer.endWidth = pathWidth;
+        lineRenderer.useWorldSpace = true;
 
-        if (shader != null)
-        {
-            targetMat = new Material(shader);
+        lineRenderer.sortingLayerName = "Default";
+        lineRenderer.sortingOrder = 1; 
 
-            if (Application.isPlaying)
-                lineRenderer.material = targetMat;      // per-instance at runtime
+        // Use sharedMaterial in edit mode, material in play mode
+        Material targetMat = Application.isPlaying 
+            ? lineRenderer.material 
+            : lineRenderer.sharedMaterial;
+
+        if (targetMat == null)
+        {
+            Shader shader = Shader.Find("GBA_Sprite");
+            if (shader == null)
+            {
+                shader = Shader.Find("Sprites/Default");
+                Debug.LogWarning("GBA_Sprite shader not found, using Sprites/Default");
+            }
+
+            if (shader != null)
+            {
+                targetMat = new Material(shader);
+
+                if (Application.isPlaying)
+                    lineRenderer.material = targetMat;      // per-instance at runtime
+                else
+                    lineRenderer.sharedMaterial = targetMat; // shared in edit mode
+            }
             else
-                lineRenderer.sharedMaterial = targetMat; // shared in edit mode
+            {
+                Debug.LogError("Could not find suitable shader for LineRenderer!");
+            }
         }
-        else
+
+        if (targetMat != null)
         {
-            Debug.LogError("Could not find suitable shader for LineRenderer!");
+            targetMat.color = Color.white;
+        }
+
+        lineRenderer.startColor = visibleColor;
+        lineRenderer.endColor = visibleColor;
+
+        if (Application.isPlaying)
+        {
+            Debug.Log($"LineRenderer setup: width={pathWidth}, sortingOrder={lineRenderer.sortingOrder}, material={targetMat?.name}, startColor={lineRenderer.startColor}, endColor={lineRenderer.endColor}");
         }
     }
-
-    if (targetMat != null)
-    {
-        targetMat.color = Color.white;
-    }
-
-    lineRenderer.startColor = visibleColor;
-    lineRenderer.endColor = visibleColor;
-
-    if (Application.isPlaying)
-    {
-        Debug.Log($"LineRenderer setup: width={pathWidth}, sortingOrder={lineRenderer.sortingOrder}, material={targetMat?.name}, startColor={lineRenderer.startColor}, endColor={lineRenderer.endColor}");
-    }
-}
 
     
     void GeneratePath()

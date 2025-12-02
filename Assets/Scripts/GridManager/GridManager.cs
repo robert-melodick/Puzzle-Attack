@@ -27,7 +27,7 @@ public class GridManager : MonoBehaviour
     public MatchDetector matchDetector;
     public MatchProcessor matchProcessor;
     public TileSpawner tileSpawner;
-    public BlockSlipManager blockSlipManager; // NEW
+    public BlockSlipManager blockSlipManager;
 
     #endregion
 
@@ -51,6 +51,15 @@ public class GridManager : MonoBehaviour
     public bool IsTileAnimating(GameObject tile) => swappingTiles.Contains(tile) || droppingTiles.Contains(tile);
 
     public void SetIsSwapping(bool value) => isSwapping = value;
+
+    // Called by CursorController.Swap()
+    public void RequestSwapAtCursor()
+    {
+        if (!isSwapping)
+        {
+            StartCoroutine(SwapCursorTiles());
+        }
+    }
 
     /// <summary>
     /// Finds the grid position of a given tile GameObject 
@@ -156,7 +165,7 @@ public class GridManager : MonoBehaviour
         blockSlipManager.CleanupTracking();
 
         // Handle cursor input
-        cursorController.HandleInput(gridWidth, gridHeight);
+        cursorController.HandleInput();
 
         // Optional debug indicator
         // blockSlipManager.UpdateBlockSlipIndicator();

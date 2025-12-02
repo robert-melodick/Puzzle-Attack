@@ -13,7 +13,7 @@ public class MatchProcessor : MonoBehaviour
 
     private GameObject[,] grid;
     private HashSet<Vector2Int> processingTiles = new HashSet<Vector2Int>();
-    private bool isProcessingMatches = false;
+    public bool isProcessingMatches = false;
     private MatchDetector matchDetector;
     private GridManager gridManager;
 

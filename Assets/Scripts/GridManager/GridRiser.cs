@@ -55,6 +55,15 @@ public class GridRiser : MonoBehaviour
         this.gridHeight = gridHeight;
     }
 
+    // Called by CursorController.RiseGrid()
+    public void RequestFastRise()
+    {
+        if (!gridManager.IsSwapping && !matchProcessor.isProcessingMatches)
+        {
+            StartCoroutine(RiseGrid());
+        }
+    }
+
     public void StartRising()
     {
         StartCoroutine(RiseGrid());

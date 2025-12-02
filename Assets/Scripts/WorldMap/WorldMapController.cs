@@ -20,8 +20,11 @@ public class WorldMapController : MonoBehaviour
     public List<MapNode> allNodes = new List<MapNode>();
     
     private bool isMoving = false;
-    private List<MapNode> availableNodes = new List<MapNode>();
+    public bool IsMoving => isMoving;
     
+    private List<MapNode> availableNodes = new List<MapNode>();
+
+
     void Start()
     {
         if (currentNode != null && playerMarker != null)
@@ -123,36 +126,78 @@ public class WorldMapController : MonoBehaviour
         }
     }
 
+    MapPath FindPathBetween(MapNode from, MapNode to)
+    {
+        var paths = FindObjectsByType<MapPath>(FindObjectsSortMode.None);
+        foreach (var path in paths)
+        {
+            bool forward  = path.startNode == from && path.endNode == to;
+            bool backward = path.isBidirectional && path.startNode == to && path.endNode == from;
+
+            if (forward || backward)
+                return path;
+        }
+        return null;
+    }
+
     
     void MoveToNode(MapNode targetNode)
     {
-        StartCoroutine(MovePlayerToNode(targetNode));
+        MapPath path = FindPathBetween(currentNode, targetNode);
+        StartCoroutine(MovePlayerAlongPath(targetNode, path));
     }
-    
-    System.Collections.IEnumerator MovePlayerToNode(MapNode targetNode)
+
+    System.Collections.IEnumerator MovePlayerAlongPath(MapNode targetNode, MapPath path)
     {
         isMoving = true;
-        
-        Vector3 startPos = playerMarker.position;
-        Vector3 endPos = targetNode.transform.position;
-        float distance = Vector3.Distance(startPos, endPos);
-        float duration = distance / moveSpeed;
-        float elapsed = 0f;
-        
-        while (elapsed < duration)
+
+        Vector3[] points = null;
+
+        if (path != null)
         {
-            elapsed += Time.deltaTime;
-            float t = elapsed / duration;
-            playerMarker.position = Vector3.Lerp(startPos, endPos, t);
-            yield return null;
+            points = path.GetPathPoints(currentNode);
         }
-        
-        playerMarker.position = endPos;
+
+        // Fallback: no path or broken lineRenderer → straight line
+        if (points == null || points.Length < 2)
+        {
+            points = new Vector3[]
+            {
+                playerMarker.position,
+                targetNode.transform.position
+            };
+        }
+
+        // Move along each segment with consistent speed
+        for (int i = 1; i < points.Length; i++)
+        {
+            Vector3 startPos = points[i - 1];
+            Vector3 endPos   = points[i];
+
+            // keep marker on same z as current
+            startPos.z = playerMarker.position.z;
+            endPos.z   = playerMarker.position.z;
+
+            float distance = Vector3.Distance(startPos, endPos);
+            float duration = distance / moveSpeed;
+            float elapsed  = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                playerMarker.position = Vector3.Lerp(startPos, endPos, t);
+                yield return null;
+            }
+
+            playerMarker.position = endPos;
+        }
+
         currentNode = targetNode;
         isMoving = false;
-        
         UpdateAvailableNodes();
     }
+
     
     void SelectCurrentNode()
     {
