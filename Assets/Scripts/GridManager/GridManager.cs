@@ -277,6 +277,9 @@ public class GridManager : MonoBehaviour
                     new Vector3(rightPos.Value.x * tileSize, rightPos.Value.y * tileSize + gridRiser.CurrentGridOffset, 0);
             }
 
+            // Swap animation is complete, stop accumulating time debt
+            isSwapping = false;
+
             // Drop any tiles that can fall after swap
             yield return StartCoroutine(DropTiles());
 
@@ -291,6 +294,7 @@ public class GridManager : MonoBehaviour
         {
             swappingTiles.Remove(leftTile);
             swappingTiles.Remove(rightTile);
+            // Ensure isSwapping is false even if an exception occurs
             isSwapping = false;
         }
     }

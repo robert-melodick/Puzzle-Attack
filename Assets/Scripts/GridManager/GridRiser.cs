@@ -25,7 +25,7 @@ public class GridRiser : MonoBehaviour
     private bool hasBlockAtTop = false;
     private bool gameOver = false;
     private float breathingRoomTimer = 0f; // Time remaining before grid resumes rising
-    private float pausedTimeDebt = 0f; // Accumulated time while paused (swaps, matches, etc.)
+    private float pausedTimeDebt = 0f; // Accumulated time while paused (only from swapping)
 
     private GridManager gridManager;
     private GameObject[,] grid;
@@ -140,10 +140,15 @@ public class GridRiser : MonoBehaviour
                 }
             }
             // Check if grid should be paused (excluding grace period which is handled above)
-            else if (matchProcessor.IsProcessingMatches || gridManager.IsSwapping || breathingRoomTimer > 0f)
+            else if (gridManager.IsSwapping)
             {
-                // Accumulate time debt while paused
+                // Accumulate time debt while paused from swapping
                 pausedTimeDebt += Time.deltaTime;
+            }
+            else if (matchProcessor.isProcessingMatches)
+            {
+                // Pause for match processing, but don't accumulate time debt
+                // (player shouldn't be penalized for making matches)
             }
             else
             {
