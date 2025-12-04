@@ -194,31 +194,69 @@ public class GridManager : MonoBehaviour
         GameObject leftTile = grid[leftX, y];
         GameObject rightTile = grid[rightX, y];
 
-        // First give BlockSlipManager a chance
-        if (blockSlipManager.TryHandleBlockSlipAtCursor(cursorPos))
+        Tile leftTileScript = leftTile != null ? leftTile.GetComponent<Tile>() : null;
+        Tile rightTileScript = rightTile != null ? rightTile.GetComponent<Tile>() : null;
+
+        bool leftFalling = leftTileScript != null && leftTileScript.State == Tile.MovementState.Falling;
+        bool rightFalling = rightTileScript != null && rightTileScript.State == Tile.MovementState.Falling;
+
+        bool leftIdle = leftTileScript == null || leftTileScript.State == Tile.MovementState.Idle;
+        bool rightIdle = rightTileScript == null || rightTileScript.State == Tile.MovementState.Idle;
+
+        // Check if tiles are being processed (matched)
+        bool leftProcessed = matchProcessor.IsTileBeingProcessed(leftX, y);
+        bool rightProcessed = matchProcessor.IsTileBeingProcessed(rightX, y);
+
+        if (leftProcessed || rightProcessed)
         {
-            // Block Slip took over, so skip normal swap
+            Debug.Log($">>> SWAP BLOCKED - tiles being processed <<<");
             return;
         }
 
-        // Normal swap sanity checks
-        bool leftProcessed = matchProcessor.IsTileBeingProcessed(leftX, y);
-        bool rightProcessed = matchProcessor.IsTileBeingProcessed(rightX, y);
+        // Check if tiles are currently swapping
         bool leftSwapping = leftTile != null && swappingTiles.Contains(leftTile);
         bool rightSwapping = rightTile != null && swappingTiles.Contains(rightTile);
+
+        if (leftSwapping || rightSwapping)
+        {
+            Debug.Log($">>> SWAP BLOCKED - tiles swapping <<<");
+            return;
+        }
+
+        // Case 1: exactly one tile falling at cursor -> this MUST be a BlockSlip kick-under
+        if (leftFalling ^ rightFalling)
+        {
+            if (blockSlipManager.TryKickUnderFallingAtCursor(cursorPos))
+            {
+                // BlockSlip handled it; no normal swap
+                return;
+            }
+
+            Debug.Log(">>> SWAP BLOCKED - one tile falling, BlockSlip not available <<<");
+            return;
+        }
+
+        // Case 2: both tiles idle (or null) -> try "falling higher up" BlockSlip first
+        if (leftIdle && rightIdle)
+        {
+            if (blockSlipManager.TryHandleBlockSlipAtCursor(cursorPos))
+            {
+                // BlockSlip handled it
+                return;
+            }
+        }
+
+        // Fallback: normal swap, but only if not dropping at cursor
         bool leftDropping = leftTile != null && droppingTiles.Contains(leftTile);
         bool rightDropping = rightTile != null && droppingTiles.Contains(rightTile);
 
-        if (!leftProcessed && !rightProcessed &&
-            !leftSwapping && !rightSwapping &&
-            !leftDropping && !rightDropping)
+        if (!leftDropping && !rightDropping)
         {
             StartCoroutine(SwapCursorTiles());
         }
         else
         {
-            Debug.Log($">>> SWAP BLOCKED <<<");
-            Debug.Log($"Reason: leftProcessed={leftProcessed}, rightProcessed={rightProcessed}, leftSwapping={leftSwapping}, rightSwapping={rightSwapping}, leftDropping={leftDropping}, rightDropping={rightDropping}");
+            Debug.Log($">>> SWAP BLOCKED - tiles dropping at cursor <<<");
         }
     }
 
@@ -277,8 +315,22 @@ public class GridManager : MonoBehaviour
                     new Vector3(rightPos.Value.x * tileSize, rightPos.Value.y * tileSize + gridRiser.CurrentGridOffset, 0);
             }
 
-            // Swap animation is complete, stop accumulating time debt
+            // Swap animation is complete
             isSwapping = false;
+
+            // Check if swap placed blocks in path of falling blocks and handle mid-air interception
+            bool midAirInterceptHandled = false;
+            if (leftPos.HasValue && rightPos.HasValue)
+            {
+                midAirInterceptHandled = blockSlipManager.HandleMidAirSwapInterception(
+                    leftTile, rightTile, leftPos.Value, rightPos.Value);
+            }
+
+            // If mid-air intercept was handled, wait for cascade animation
+            if (midAirInterceptHandled)
+            {
+                yield return new WaitForSeconds(dropDuration * 0.5f); // Wait for quick nudge cascade
+            }
 
             // Drop any tiles that can fall after swap
             yield return StartCoroutine(DropTiles());
@@ -294,7 +346,6 @@ public class GridManager : MonoBehaviour
         {
             swappingTiles.Remove(leftTile);
             swappingTiles.Remove(rightTile);
-            // Ensure isSwapping is false even if an exception occurs
             isSwapping = false;
         }
     }

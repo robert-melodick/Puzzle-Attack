@@ -1,0 +1,42 @@
+sequenceDiagram
+    participant Player
+    participant Cursor as CursorController
+    participant Grid as GridManager
+    participant Slip as BlockSlipManager
+    participant Detect as MatchDetector
+    participant Proc as MatchProcessor
+    participant Riser as GridRiser
+    participant Score as ScoreManager
+
+    Player->>Cursor: press swap key (Z/K/Space)
+    Cursor->>Grid: RequestSwapAtCursor()
+
+    Note over Grid: HandleSwapInput()\nreads cursor tiles and states
+
+    Grid->>Slip: TryHandleBlockSlipAtCursor(cursorPos)
+    alt BlockSlip possible
+        Slip-->Grid: StartCoroutine(HandleBlockSlip)
+        Slip->>Grid: (inside) mutate grid for slip\nstart swap + cascades
+        Slip->>Grid: DropTiles() at end\n(full gravity pass)
+    else no BlockSlip
+        Grid->>Slip: StartSwapAnimation(left,right)
+        Slip-->Grid: swap coroutines run
+        Grid->>Grid: DropTiles()\n(normal gravity)
+    end
+
+    Grid->>Detect: GetAllMatches()
+    alt matches found
+        Grid->>Proc: ProcessMatches(matchList)
+        loop each match group / cascade
+            Proc->>Score: AddScore(tilesMatched)
+            Proc->>Grid: clear tiles in grid[,]
+            Proc->>Slip: BeginDrop() per tile
+            Slip->>Grid: MoveTileDrop coroutines
+            Proc->>Detect: GetMatchGroups() (for cascades)
+        end
+        Proc->>Score: ResetCombo() (if no further cascades)
+    else no matches
+        Note over Grid,Riser: control returns to rising\n(loop continues)
+    end
+
+    Riser-->>Grid: (in Update) adjust CurrentGridOffset\ncheck game over

@@ -103,11 +103,12 @@ public class MatchProcessor : MonoBehaviour
 
             yield return new WaitForSeconds(0.1f);
 
-            // Drop tiles first, THEN clear processing tiles to prevent swaps during drop animation
-            yield return StartCoroutine(gridManager.DropTiles());
-
-            // Clear processing tiles after dropping completes
+            // Clear processing tiles now that matched tiles are destroyed
+            // This allows falling blocks to not be incorrectly marked as "processed"
             processingTiles.Clear();
+
+            // Drop tiles to fill the gaps
+            yield return StartCoroutine(gridManager.DropTiles());
 
             matchGroups = matchDetector.GetMatchGroups();
         }
@@ -181,11 +182,12 @@ public class MatchProcessor : MonoBehaviour
 
         yield return new WaitForSeconds(0.1f);
 
-        // Drop tiles first, THEN clear processing tiles to prevent swaps during drop animation
-        yield return StartCoroutine(gridManager.DropTiles());
-
-        // Clear processing tiles after dropping completes
+        // Clear processing tiles now that matched tiles are destroyed
+        // This allows falling blocks to not be incorrectly marked as "processed"
         processingTiles.Clear();
+
+        // Drop tiles to fill the gaps
+        yield return StartCoroutine(gridManager.DropTiles());
 
         List<List<GameObject>> cascadeMatchGroups = matchDetector.GetMatchGroups();
         if (cascadeMatchGroups.Count > 0)
