@@ -282,7 +282,8 @@ public class BlockSlipManager : MonoBehaviour
 
 
     /// <summary>
-    /// Used by GridManager.DropTiles() for normal drops (no obstruction checking).
+    /// Used by GridManager.DropTiles() for normal drops.
+    /// Obstruction checking is disabled - blockslip handles retargeting explicitly.
     /// </summary>
     public void BeginDrop(GameObject tile, Vector2Int from, Vector2Int to)
     {
@@ -290,13 +291,14 @@ public class BlockSlipManager : MonoBehaviour
 
         droppingTiles.Add(tile);
 
-        // Tell the Tile it’s now falling
+        // Tell the Tile it's now falling
         Tile ts = tile.GetComponent<Tile>();
         if (ts != null)
             ts.StartFalling(to);
 
-        // IMPORTANT: start from the tile’s current world position
+        // IMPORTANT: start from the tile's current world position
         Vector3 fromWorldPos = tile.transform.position;
+        // Obstruction checking disabled for normal drops
         StartCoroutine(MoveTileDrop(tile, fromWorldPos, to, false));
     }
 
@@ -392,30 +394,105 @@ public class BlockSlipManager : MonoBehaviour
         }
         Vector2Int swappingBlockPos = swappingBlockPosOpt.Value;
 
-        // 1. Collect every tile in this column at/above the slip row (excluding the swapping block).
-        //    These will all be pushed UP by 1 row.
-        List<(GameObject tile, Vector2Int from, Vector2Int to)> columnBlocks =
+        // 1. Collect blocks in this column that need handling (excluding the swapping block).
+        //    Check BOTH the grid array AND falling blocks, since falling blocks may have
+        //    already been moved to their target position in the grid array.
+        //    Separate them into two groups based on fall progress:
+        //    - Blocks <50% through the swap row: nudge UP by 1 row
+        //    - Blocks >50% through the swap row: retarget to land on swapped block
+        List<(GameObject tile, Vector2Int from, Vector2Int to)> blocksToNudgeUp =
             new List<(GameObject, Vector2Int, Vector2Int)>();
+        List<(GameObject tile, Vector2Int currentTarget)> blocksToRetarget =
+            new List<(GameObject, Vector2Int)>();
 
+        HashSet<GameObject> processedBlocks = new HashSet<GameObject>();
+
+        float swapRowWorldY = row * tileSize + gridRiser.CurrentGridOffset;
+        float swapRowMidpoint = swapRowWorldY + (tileSize * 0.5f);
+
+        // First, check all falling blocks in this column
+        foreach (GameObject t in droppingTiles)
+        {
+            if (t == null || t == swappingBlock) continue;
+
+            // Check if this falling block is in our column or will pass through our swap row
+            if (!droppingTargets.TryGetValue(t, out Vector2Int target)) continue;
+            if (target.x != col) continue; // Different column, ignore
+
+            float tileWorldY = t.transform.position.y;
+            int currentGridY = Mathf.RoundToInt((tileWorldY - gridRiser.CurrentGridOffset) / tileSize);
+
+            // Check if this block's path crosses the swap row
+            // (currently above or at the swap row, targeting at or below it)
+            if (currentGridY >= row && target.y <= row)
+            {
+                // Check if block is CURRENTLY IN the swap row (not just above it)
+                float swapRowTop = swapRowWorldY + tileSize;
+                bool isCurrentlyInSwapRow = (tileWorldY >= swapRowWorldY && tileWorldY < swapRowTop);
+
+                if (isCurrentlyInSwapRow)
+                {
+                    // Block is currently in the swap row - check 50% threshold
+                    bool isPastMidpoint = tileWorldY < swapRowMidpoint;
+
+                    if (isPastMidpoint)
+                    {
+                        // This block is >50% through the swap row - retarget it
+                        blocksToRetarget.Add((t, target));
+                        Debug.Log($"[BlockSlip] Falling block is >50% through row {row} (Y: {tileWorldY:F2}, midpoint: {swapRowMidpoint:F2}), will retarget");
+                    }
+                    else
+                    {
+                        // This block is <50% through the swap row - nudge it up
+                        Vector2Int? gridPos = gridManager.FindTilePosition(t);
+                        if (gridPos.HasValue)
+                        {
+                            int newY = gridPos.Value.y + 1;
+                            if (newY >= gridHeight)
+                            {
+                                Debug.LogWarning("[BlockSlip] Cascade would overflow top of grid. Aborting slip.");
+                                gridManager.SetIsSwapping(false);
+                                yield break;
+                            }
+
+                            blocksToNudgeUp.Add((t, gridPos.Value, new Vector2Int(col, newY)));
+                            Debug.Log($"[BlockSlip] Falling block is <50% through row {row} (Y: {tileWorldY:F2}, midpoint: {swapRowMidpoint:F2}), will nudge up");
+                        }
+                    }
+                }
+                else
+                {
+                    // Block is above the swap row - it will be retargeted to land above the swapped block
+                    // Don't nudge it up, just add it to the retarget list
+                    blocksToRetarget.Add((t, target));
+                    Debug.Log($"[BlockSlip] Falling block is above row {row} (Y: {tileWorldY:F2}, swap row: {swapRowWorldY:F2}), will retarget to land above swapped block");
+                }
+
+                processedBlocks.Add(t);
+            }
+        }
+
+        // Second, check stationary blocks in the grid at/above the swap row
         for (int y = row; y < gridHeight; y++)
         {
             GameObject t = grid[col, y];
-            if (t == null || t == swappingBlock) continue;
+            if (t == null || t == swappingBlock || processedBlocks.Contains(t)) continue;
 
+            // This is a stationary (non-falling) block - nudge it up
             int newY = y + 1;
             if (newY >= gridHeight)
             {
-                // Would overflow the grid - abort safely
                 Debug.LogWarning("[BlockSlip] Cascade would overflow top of grid. Aborting slip.");
                 gridManager.SetIsSwapping(false);
                 yield break;
             }
 
-            columnBlocks.Add((t, new Vector2Int(col, y), new Vector2Int(col, newY)));
+            blocksToNudgeUp.Add((t, new Vector2Int(col, y), new Vector2Int(col, newY)));
+            Debug.Log($"[BlockSlip] Stationary block at ({col}, {y}) will nudge up");
         }
 
-        // 2. Cancel any active drops on those column tiles so their old coroutines stop cleanly.
-        foreach (var (tile, from, to) in columnBlocks)
+        // 2a. Cancel drops for blocks that will be nudged up
+        foreach (var (tile, from, to) in blocksToNudgeUp)
         {
             if (tile == null) continue;
 
@@ -432,6 +509,9 @@ public class BlockSlipManager : MonoBehaviour
             }
         }
 
+        // 2b. For blocks that will be retargeted, we DON'T cancel their drops
+        //     Instead, we'll update their targets so they seamlessly adjust while falling
+
         // Also cancel the falling block's drop if it's still tracked
         if (fallingBlock != null && droppingTiles.Contains(fallingBlock))
         {
@@ -445,12 +525,13 @@ public class BlockSlipManager : MonoBehaviour
         }
 
         // 3. Update the grid:
-        //    - clear old positions for the swapping block and all column tiles
+        //    - clear old positions for the swapping block and blocks being nudged up
         //    - place swapping block at slip row
-        //    - place column tiles at their new (y+1) positions
+        //    - place nudged tiles at their new (y+1) positions
+        //    - retargeted blocks stay in their current grid positions (will be updated by their drop animation)
         grid[swappingBlockPos.x, swappingBlockPos.y] = null;
 
-        foreach (var (tile, from, to) in columnBlocks)
+        foreach (var (tile, from, to) in blocksToNudgeUp)
         {
             grid[from.x, from.y] = null;
         }
@@ -458,26 +539,27 @@ public class BlockSlipManager : MonoBehaviour
         // Place the kicked block in the slip cell
         grid[col, row] = swappingBlock;
 
-        // Push everything above up by one
-        foreach (var (tile, from, to) in columnBlocks)
+        // Push nudged blocks up by one
+        foreach (var (tile, from, to) in blocksToNudgeUp)
         {
             grid[to.x, to.y] = tile;
         }
 
         // Mark as "protected" while we animate
         swappingTiles.Add(swappingBlock);
-        foreach (var (tile, from, to) in columnBlocks)
+        foreach (var (tile, from, to) in blocksToNudgeUp)
         {
             if (tile != null) swappingTiles.Add(tile);
         }
 
         // 4. Animate:
         //    - horizontal swap of the kicked block into the column
-        //    - quick upward nudge for the column tiles
+        //    - quick upward nudge for blocks being nudged
+        //    - smooth retargeting for blocks continuing to fall
         StartSwapAnimation(swappingBlock, fallingBlockPos);
 
         float maxCascadeDuration = 0f;
-        foreach (var (tile, from, to) in columnBlocks)
+        foreach (var (tile, from, to) in blocksToNudgeUp)
         {
             if (tile == null) continue;
 
@@ -496,15 +578,98 @@ public class BlockSlipManager : MonoBehaviour
             StartCoroutine(MoveTileCascadeSmooth(tile, to));
         }
 
+        // 4b. Retarget blocks that are continuing to fall
+        //     Sort by current Y position (lowest first) so they stack properly
+        //     Calculate where each should land (stacking from the swap row upward)
+
+        // Sort blocks by their current Y position (lowest first)
+        blocksToRetarget.Sort((a, b) =>
+        {
+            float aY = a.tile != null ? a.tile.transform.position.y : 0;
+            float bY = b.tile != null ? b.tile.transform.position.y : 0;
+            return aY.CompareTo(bY); // Lower Y values come first (lower on screen)
+        });
+
+        int nextAvailableRow = row; // Start at the swap row (where swappingBlock will be)
+
+        foreach (var (tile, oldTarget) in blocksToRetarget)
+        {
+            if (tile == null) continue;
+
+            // This block should land one row above the previous block
+            nextAvailableRow++;
+            Vector2Int newTarget = new Vector2Int(col, nextAvailableRow);
+
+            Debug.Log($"[BlockSlip] Retargeting block from old target ({oldTarget.x}, {oldTarget.y}) to new target ({newTarget.x}, {newTarget.y}). Current visual Y: {tile.transform.position.y}");
+
+            // Update the grid array - clear old position, set new position
+            if (grid[oldTarget.x, oldTarget.y] == tile)
+            {
+                grid[oldTarget.x, oldTarget.y] = null;
+                Debug.Log($"[BlockSlip] Cleared old grid position ({oldTarget.x}, {oldTarget.y})");
+            }
+            else
+            {
+                Debug.LogWarning($"[BlockSlip] Block not found at old target ({oldTarget.x}, {oldTarget.y}), grid has: {(grid[oldTarget.x, oldTarget.y] != null ? grid[oldTarget.x, oldTarget.y].name : "null")}");
+            }
+
+            if (grid[newTarget.x, newTarget.y] != null && grid[newTarget.x, newTarget.y] != tile)
+            {
+                Debug.LogWarning($"[BlockSlip] Grid position ({newTarget.x}, {newTarget.y}) already occupied by {grid[newTarget.x, newTarget.y].name}!");
+            }
+            grid[newTarget.x, newTarget.y] = tile;
+            Debug.Log($"[BlockSlip] Set new grid position ({newTarget.x}, {newTarget.y})");
+
+            // Cancel the old drop animation and start a new one with the new target
+            // This creates a seamless retarget by starting from the tile's current position
+            int oldVersion = GetVersion(tile);
+            dropAnimationVersion[tile] = oldVersion + 1; // Cancel old animation
+            droppingTiles.Remove(tile); // Remove from tracking
+            droppingProgress.Remove(tile);
+            droppingTargets.Remove(tile);
+            Debug.Log($"[BlockSlip] Cancelled old drop animation (version {oldVersion} -> {oldVersion + 1})");
+
+            // Update the Tile component
+            Tile ts = tile.GetComponent<Tile>();
+            if (ts != null)
+            {
+                ts.Initialize(newTarget.x, newTarget.y, ts.TileType, gridManager);
+                ts.StartFalling(newTarget); // Reset to falling state with new target
+            }
+
+            // Start a new drop animation from current position to new target
+            Vector3 currentWorldPos = tile.transform.position;
+            droppingTiles.Add(tile);
+            droppingTargets[tile] = newTarget;
+            // Obstruction checking disabled - this block was already explicitly retargeted
+            StartCoroutine(MoveTileDrop(tile, currentWorldPos, newTarget, false));
+
+            Debug.Log($"[BlockSlip] Started new drop animation from current pos {currentWorldPos} to {newTarget}");
+        }
+
         // Wait for both the swap and the cascade to finish
         float waitTime = Mathf.Max(swapDuration, maxCascadeDuration);
         if (waitTime > 0f)
             yield return new WaitForSeconds(waitTime);
 
+        // Update the swapped block's Tile component coordinates to match its new grid position
+        if (swappingBlock != null)
+        {
+            Tile swappingBlockScript = swappingBlock.GetComponent<Tile>();
+            if (swappingBlockScript != null)
+            {
+                swappingBlockScript.Initialize(col, row, swappingBlockScript.TileType, gridManager);
+                swappingBlock.transform.position = new Vector3(
+                    col * tileSize,
+                    row * tileSize + gridRiser.CurrentGridOffset,
+                    0);
+            }
+        }
+
         // 5. Let gravity resolve everything: all blocks above empty cells will fall together.
         //    This also fixes any tiny discrepancies that may have slipped through.
         swappingTiles.Remove(swappingBlock);
-        foreach (var (tile, from, to) in columnBlocks)
+        foreach (var (tile, from, to) in blocksToNudgeUp)
         {
             swappingTiles.Remove(tile);
         }
