@@ -289,6 +289,16 @@ public class BlockSlipManager : MonoBehaviour
     {
         if (tile == null) return;
 
+        // Check if this tile is already dropping
+        if (droppingTiles.Contains(tile))
+        {
+            Debug.LogWarning($"[BeginDrop] WARNING: {tile.name} is already dropping! From ({from.x}, {from.y}) to ({to.x}, {to.y})");
+            if (droppingTargets.TryGetValue(tile, out Vector2Int currentTarget))
+            {
+                Debug.LogWarning($"[BeginDrop] Current target: ({currentTarget.x}, {currentTarget.y})");
+            }
+        }
+
         droppingTiles.Add(tile);
 
         // Tell the Tile it's now falling
@@ -298,6 +308,8 @@ public class BlockSlipManager : MonoBehaviour
 
         // IMPORTANT: start from the tile's current world position
         Vector3 fromWorldPos = tile.transform.position;
+        Debug.Log($"[BeginDrop] {tile.name} starting drop from world Y:{fromWorldPos.y:F3} (grid {from.x},{from.y}) to grid ({to.x},{to.y})");
+
         // Obstruction checking disabled for normal drops
         StartCoroutine(MoveTileDrop(tile, fromWorldPos, to, false));
     }
@@ -411,6 +423,10 @@ public class BlockSlipManager : MonoBehaviour
         float swapRowMidpoint = swapRowWorldY + (tileSize * 0.5f);
 
         // First, check all falling blocks in this column
+        Debug.Log($"[BlockSlip] ========== DETECTING FALLING BLOCKS in column {col}, swap row {row} ==========");
+        Debug.Log($"[BlockSlip] Total dropping tiles in game: {droppingTiles.Count}");
+
+        int fallingInColumn = 0;
         foreach (GameObject t in droppingTiles)
         {
             if (t == null || t == swappingBlock) continue;
@@ -419,12 +435,15 @@ public class BlockSlipManager : MonoBehaviour
             if (!droppingTargets.TryGetValue(t, out Vector2Int target)) continue;
             if (target.x != col) continue; // Different column, ignore
 
+            fallingInColumn++;
             float tileWorldY = t.transform.position.y;
             int currentGridY = Mathf.RoundToInt((tileWorldY - gridRiser.CurrentGridOffset) / tileSize);
 
-            // Check if this block's path crosses the swap row
-            // (currently above or at the swap row, targeting at or below it)
-            if (currentGridY >= row && target.y <= row)
+            Debug.Log($"[BlockSlip] Falling block #{fallingInColumn} in column: currentY={tileWorldY:F2} (grid ~{currentGridY}), target=({target.x}, {target.y})");
+
+            // Check if this block is currently at or above the swap row
+            // If so, it needs to be handled (either retargeted or nudged)
+            if (currentGridY >= row)
             {
                 // Check if block is CURRENTLY IN the swap row (not just above it)
                 float swapRowTop = swapRowWorldY + tileSize;
@@ -448,13 +467,6 @@ public class BlockSlipManager : MonoBehaviour
                         if (gridPos.HasValue)
                         {
                             int newY = gridPos.Value.y + 1;
-                            if (newY >= gridHeight)
-                            {
-                                Debug.LogWarning("[BlockSlip] Cascade would overflow top of grid. Aborting slip.");
-                                gridManager.SetIsSwapping(false);
-                                yield break;
-                            }
-
                             blocksToNudgeUp.Add((t, gridPos.Value, new Vector2Int(col, newY)));
                             Debug.Log($"[BlockSlip] Falling block is <50% through row {row} (Y: {tileWorldY:F2}, midpoint: {swapRowMidpoint:F2}), will nudge up");
                         }
@@ -462,10 +474,18 @@ public class BlockSlipManager : MonoBehaviour
                 }
                 else
                 {
-                    // Block is above the swap row - it will be retargeted to land above the swapped block
-                    // Don't nudge it up, just add it to the retarget list
-                    blocksToRetarget.Add((t, target));
-                    Debug.Log($"[BlockSlip] Falling block is above row {row} (Y: {tileWorldY:F2}, swap row: {swapRowWorldY:F2}), will retarget to land above swapped block");
+                    // Block is NOT currently in the swap row - check if it's above or below
+                    if (tileWorldY >= swapRowTop)
+                    {
+                        // Block is above the swap row - it will be retargeted to land above the swapped block
+                        blocksToRetarget.Add((t, target));
+                        Debug.Log($"[BlockSlip] Falling block is above row {row} (Y: {tileWorldY:F2}, swap row top: {swapRowTop:F2}), will retarget to land above swapped block");
+                    }
+                    else
+                    {
+                        // Block is below the swap row - ignore it (shouldn't be affected by this swap)
+                        Debug.Log($"[BlockSlip] Falling block is below row {row} (Y: {tileWorldY:F2}, swap row: {swapRowWorldY:F2}), ignoring");
+                    }
                 }
 
                 processedBlocks.Add(t);
@@ -592,42 +612,73 @@ public class BlockSlipManager : MonoBehaviour
 
         int nextAvailableRow = row; // Start at the swap row (where swappingBlock will be)
 
+        // First pass: calculate new targets and store them
+        List<(GameObject tile, Vector2Int oldTarget, Vector2Int newTarget)> retargetPlan =
+            new List<(GameObject, Vector2Int, Vector2Int)>();
+
+        Debug.Log($"[BlockSlip] ========== RETARGETING {blocksToRetarget.Count} BLOCKS ==========");
+        int blockIndex = 0;
         foreach (var (tile, oldTarget) in blocksToRetarget)
         {
             if (tile == null) continue;
 
+            blockIndex++;
             // This block should land one row above the previous block
             nextAvailableRow++;
             Vector2Int newTarget = new Vector2Int(col, nextAvailableRow);
 
-            Debug.Log($"[BlockSlip] Retargeting block from old target ({oldTarget.x}, {oldTarget.y}) to new target ({newTarget.x}, {newTarget.y}). Current visual Y: {tile.transform.position.y}");
+            retargetPlan.Add((tile, oldTarget, newTarget));
+            Debug.Log($"[BlockSlip] Block #{blockIndex}: {tile.name} from old target ({oldTarget.x}, {oldTarget.y}) to new target ({newTarget.x}, {newTarget.y}). Current visual Y: {tile.transform.position.y:F3}");
+        }
 
-            // Update the grid array - clear old position, set new position
+        // Second pass: clear ALL old grid positions first
+        Debug.Log($"[BlockSlip] ========== CLEARING OLD POSITIONS ==========");
+        blockIndex = 0;
+        foreach (var (tile, oldTarget, newTarget) in retargetPlan)
+        {
+            blockIndex++;
             if (grid[oldTarget.x, oldTarget.y] == tile)
             {
                 grid[oldTarget.x, oldTarget.y] = null;
-                Debug.Log($"[BlockSlip] Cleared old grid position ({oldTarget.x}, {oldTarget.y})");
+                Debug.Log($"[BlockSlip] Block #{blockIndex} ({tile.name}): Cleared old grid position ({oldTarget.x}, {oldTarget.y})");
             }
             else
             {
-                Debug.LogWarning($"[BlockSlip] Block not found at old target ({oldTarget.x}, {oldTarget.y}), grid has: {(grid[oldTarget.x, oldTarget.y] != null ? grid[oldTarget.x, oldTarget.y].name : "null")}");
+                GameObject whatsThere = grid[oldTarget.x, oldTarget.y];
+                Debug.LogWarning($"[BlockSlip] Block #{blockIndex} ({tile.name}): NOT found at old target ({oldTarget.x}, {oldTarget.y}), grid has: {(whatsThere != null ? whatsThere.name : "null")}");
             }
+        }
 
+        // Third pass: set ALL new grid positions
+        foreach (var (tile, oldTarget, newTarget) in retargetPlan)
+        {
             if (grid[newTarget.x, newTarget.y] != null && grid[newTarget.x, newTarget.y] != tile)
             {
                 Debug.LogWarning($"[BlockSlip] Grid position ({newTarget.x}, {newTarget.y}) already occupied by {grid[newTarget.x, newTarget.y].name}!");
             }
             grid[newTarget.x, newTarget.y] = tile;
             Debug.Log($"[BlockSlip] Set new grid position ({newTarget.x}, {newTarget.y})");
+        }
 
+        // Fourth pass: cancel animations, update Tile components, and start new drops
+        Debug.Log($"[BlockSlip] ========== STARTING NEW ANIMATIONS ==========");
+        blockIndex = 0;
+        float maxRetargetDuration = 0f;
+
+        foreach (var (tile, oldTarget, newTarget) in retargetPlan)
+        {
+            blockIndex++;
             // Cancel the old drop animation and start a new one with the new target
             // This creates a seamless retarget by starting from the tile's current position
             int oldVersion = GetVersion(tile);
             dropAnimationVersion[tile] = oldVersion + 1; // Cancel old animation
+
+            bool wasDropping = droppingTiles.Contains(tile);
             droppingTiles.Remove(tile); // Remove from tracking
             droppingProgress.Remove(tile);
             droppingTargets.Remove(tile);
-            Debug.Log($"[BlockSlip] Cancelled old drop animation (version {oldVersion} -> {oldVersion + 1})");
+
+            Debug.Log($"[BlockSlip] Block #{blockIndex} ({tile.name}): Cancelled old drop animation (version {oldVersion} -> {oldVersion + 1}), was dropping: {wasDropping}");
 
             // Update the Tile component
             Tile ts = tile.GetComponent<Tile>();
@@ -637,20 +688,31 @@ public class BlockSlipManager : MonoBehaviour
                 ts.StartFalling(newTarget); // Reset to falling state with new target
             }
 
-            // Start a new drop animation from current position to new target
+            // Calculate drop duration for this block
             Vector3 currentWorldPos = tile.transform.position;
+            float targetWorldY = newTarget.y * tileSize + gridRiser.CurrentGridOffset;
+            float distance = Mathf.Abs(currentWorldPos.y - targetWorldY) / tileSize;
+            float duration = dropDuration * distance;
+            maxRetargetDuration = Mathf.Max(maxRetargetDuration, duration);
+
             droppingTiles.Add(tile);
             droppingTargets[tile] = newTarget;
-            // Obstruction checking disabled - this block was already explicitly retargeted
+            // Obstruction checking DISABLED - HandleBlockSlip already calculated correct stack positions
+            // Enabling it would cause blocks to retarget when they detect each other
             StartCoroutine(MoveTileDrop(tile, currentWorldPos, newTarget, false));
 
-            Debug.Log($"[BlockSlip] Started new drop animation from current pos {currentWorldPos} to {newTarget}");
+            Debug.Log($"[BlockSlip] Block #{blockIndex} ({tile.name}): Started new drop from Y:{currentWorldPos.y:F3} to grid({newTarget.x}, {newTarget.y}), duration: {duration:F2}s");
         }
 
-        // Wait for both the swap and the cascade to finish
-        float waitTime = Mathf.Max(swapDuration, maxCascadeDuration);
+        Debug.Log($"[BlockSlip] Max retarget duration: {maxRetargetDuration:F2}s");
+
+        // Wait for swap, cascade nudges, AND retargeted drops to finish
+        float waitTime = Mathf.Max(swapDuration, maxCascadeDuration, maxRetargetDuration);
         if (waitTime > 0f)
+        {
+            Debug.Log($"[BlockSlip] Waiting {waitTime:F2}s for animations to complete (swap:{swapDuration:F2}s, cascade:{maxCascadeDuration:F2}s, retarget:{maxRetargetDuration:F2}s)");
             yield return new WaitForSeconds(waitTime);
+        }
 
         // Update the swapped block's Tile component coordinates to match its new grid position
         if (swappingBlock != null)
@@ -975,16 +1037,23 @@ public class BlockSlipManager : MonoBehaviour
 
             if (droppingTiles.Contains(blockAtPos))
             {
+                // A falling block is an obstruction if it's retargeted and will stop at or below this position
                 if (retargetedDrops.Contains(blockAtPos) &&
                     droppingTargets.TryGetValue(blockAtPos, out Vector2Int otherTarget) &&
-                    otherTarget.y >= y)
+                    otherTarget.y <= y)  // Fixed: target at or BELOW this position
                 {
                     isSolidObstruction = true;
+                    Debug.Log($"[Obstruction] Block at grid pos ({x}, {y}) is solid - targeting row {otherTarget.y}");
+                }
+                else
+                {
+                    Debug.Log($"[Obstruction] Block at grid pos ({x}, {y}) is NOT solid - falling through");
                 }
             }
             else
             {
                 isSolidObstruction = true;
+                Debug.Log($"[Obstruction] Block at grid pos ({x}, {y}) is solid - stationary");
             }
 
             if (isSolidObstruction)

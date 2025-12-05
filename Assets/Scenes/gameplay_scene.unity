@@ -224,7 +224,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5621434329977911287, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
       propertyPath: orthographic size
-      value: 1.671875
+      value: 2.15625
+      objectReference: {fileID: 0}
+    - target: {fileID: 5621434329977911287, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
+      propertyPath: m_NormalizedViewPortRect.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5621434329977911287, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
+      propertyPath: m_NormalizedViewPortRect.width
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7007122242791172411, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
       propertyPath: m_Name
@@ -269,7 +277,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 404.72998, y: 0}
+  m_AnchoredPosition: {x: 427.0779, y: 0}
   m_SizeDelta: {x: 313.46, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &452944762
@@ -405,7 +413,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 404.72998, y: 0}
+  m_AnchoredPosition: {x: 699.4603, y: 102.1434}
   m_SizeDelta: {x: 313.46, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &801717907
@@ -775,7 +783,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 404.72998, y: 0}
+  m_AnchoredPosition: {x: 699.4602, y: 196.8851}
   m_SizeDelta: {x: 313.46, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1265609409
@@ -798,7 +806,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Time Debt: '
+  m_text: 'Grace Period: '
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8491d7d52a4a44f4f9f9822bfa8357b7, type: 2}
   m_sharedMaterial: {fileID: -453208823723551863, guid: 8491d7d52a4a44f4f9f9822bfa8357b7, type: 2}
@@ -922,7 +930,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 404.72998, y: 0}
+  m_AnchoredPosition: {x: 699.4602, y: 316.7926}
   m_SizeDelta: {x: 313.46, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1931472083
@@ -945,7 +953,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Time Debt: '
+  m_text: 'Breathing Room: '
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8491d7d52a4a44f4f9f9822bfa8357b7, type: 2}
   m_sharedMaterial: {fileID: -453208823723551863, guid: 8491d7d52a4a44f4f9f9822bfa8357b7, type: 2}
@@ -1107,6 +1115,50 @@ Transform:
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 10.474598, y: 3.9843998, z: 0.056606825}
   m_LocalScale: {x: 100.790184, y: 52.097504, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2002071880
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2002071882}
+  - component: {fileID: 2002071881}
+  m_Layer: 0
+  m_Name: Debugger
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2002071881
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2002071880}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f955966b439b8e4ea741c1d95410ed0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &2002071882
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2002071880}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 1.8489392, y: 4.9382753, z: 1.0652902}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -1527,3 +1579,4 @@ SceneRoots:
   - {fileID: 1168836805}
   - {fileID: 1998788645}
   - {fileID: 236026099}
+  - {fileID: 2002071882}

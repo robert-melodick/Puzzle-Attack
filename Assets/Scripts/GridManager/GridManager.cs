@@ -356,6 +356,8 @@ public class GridManager : MonoBehaviour
 
     public IEnumerator DropTiles()
     {
+        Debug.Log($"[DropTiles] ========== STARTING DROP CHECK (currently {droppingTiles.Count} tiles dropping) ==========");
+
         List<(GameObject tile, Vector2Int from, Vector2Int to)> drops =
             new List<(GameObject, Vector2Int, Vector2Int)>();
         int maxDropDistance = 0;
@@ -372,6 +374,17 @@ public class GridManager : MonoBehaviour
                         if (grid[x, aboveY] != null)
                         {
                             GameObject tile = grid[x, aboveY];
+
+                            // Check if this block is already dropping (e.g., retargeted by blockslip)
+                            if (droppingTiles.Contains(tile))
+                            {
+                                // This tile is already dropping and will land somewhere
+                                // We can't determine where it will land, and any block above it
+                                // can't drop past it anyway, so stop searching this column
+                                Debug.Log($"[DropTiles] Found already-dropping tile at ({x}, {aboveY}), stopping search (can't drop blocks above a dropping block)");
+                                break; // Stop searching - nothing above can drop past this
+                            }
+
                             int dropDistance = aboveY - y;
                             maxDropDistance = Mathf.Max(maxDropDistance, dropDistance);
                             drops.Add((tile, new Vector2Int(x, aboveY), new Vector2Int(x, y)));
@@ -385,6 +398,19 @@ public class GridManager : MonoBehaviour
                 }
             }
         }
+
+        // Check for conflicts before starting animations
+        Dictionary<Vector2Int, GameObject> targetMap = new Dictionary<Vector2Int, GameObject>();
+        foreach (var (tile, from, to) in drops)
+        {
+            if (targetMap.ContainsKey(to))
+            {
+                Debug.LogError($"[DropTiles] CONFLICT: Both {targetMap[to].name} and {tile.name} want to drop to ({to.x}, {to.y})!");
+            }
+            targetMap[to] = tile;
+        }
+
+        Debug.Log($"[DropTiles] Collected {drops.Count} drops, max distance: {maxDropDistance}");
 
         // Update coordinates and start animations
         foreach (var (tile, from, to) in drops)
@@ -403,8 +429,11 @@ public class GridManager : MonoBehaviour
         if (drops.Count > 0)
         {
             float waitTime = dropDuration * maxDropDistance + 0.05f;
+            Debug.Log($"[DropTiles] Waiting {waitTime:F2}s for drops to complete");
             yield return new WaitForSeconds(waitTime);
         }
+
+        Debug.Log($"[DropTiles] ========== DROP CHECK COMPLETE ==========");
     }
 
     #endregion

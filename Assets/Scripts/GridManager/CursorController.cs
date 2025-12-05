@@ -185,8 +185,6 @@ public class CursorController : MonoBehaviour, ICursorCommands
 
     private void MoveCursor(int dx, int dy)
     {
-        Debug.Log($"Moving cursor by ({dx}, {dy})");
-
         // Use current cursorPosition instead of GridX/GridY
         int newX = Mathf.Clamp(cursorPosition.x + dx, 0, gridManager.gridWidth - 1);
         int newY = Mathf.Clamp(cursorPosition.y + dy, 0, gridManager.gridHeight - 1);
