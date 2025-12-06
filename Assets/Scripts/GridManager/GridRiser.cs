@@ -126,9 +126,15 @@ namespace PuzzleAttack.Grid
                 // Handle grace period separately
                 if (isInGracePeriod)
                 {
-                    // Grace period countdown
-                    gracePeriodTimer -= Time.deltaTime;
-                    Debug.Log($"Grace Period: {gracePeriodTimer:F2}s remaining!");
+                    // Check if top row is still occupied (need to update hasBlockAtTop)
+                    CheckTopRow();
+
+                    // Only count down grace period timer if not processing matches
+                    if (!matchProcessor.isProcessingMatches)
+                    {
+                        gracePeriodTimer -= Time.deltaTime;
+                        Debug.Log($"Grace Period: {gracePeriodTimer:F2}s remaining!");
+                    }
 
                     if (gracePeriodTimer <= 0f)
                     {
@@ -136,9 +142,10 @@ namespace PuzzleAttack.Grid
                     }
                     else if (!hasBlockAtTop)
                     {
-                        // Block was cleared, exit grace period
+                        // Block was cleared, exit grace period and reset timer
                         isInGracePeriod = false;
-                        Debug.Log("Grace period ended - blocks cleared!");
+                        gracePeriodTimer = gracePeriod; // Reset timer for next grace period
+                        Debug.Log("Grace period ended - blocks cleared from top row!");
                     }
                 }
                 // Check if grid should be paused (excluding grace period which is handled above)
