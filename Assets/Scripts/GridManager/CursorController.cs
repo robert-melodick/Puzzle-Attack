@@ -23,15 +23,22 @@ namespace PuzzleAttack.Grid
         public int GridY { get; private set; }
 
         private float tileSize;
+        private int gridWidth;
+        private int gridHeight;
+        private TileSpawner tileSpawner;
         private float currentGridOffset = 0f;
         private bool blockSlipActive = false;
 
         public Vector2Int CursorPosition => cursorPosition;
 
-        public void Initialize(GridManager manager, float tileSize, int gridWidth, int gridHeight)
+        public void Initialize(GridManager manager, float tileSize, int gridWidth, int gridHeight, TileSpawner spawner = null, GridRiser riser = null)
         {
             this.gridManager = manager;
             this.tileSize = tileSize;
+            this.gridWidth = gridWidth;
+            this.gridHeight = gridHeight;
+            this.tileSpawner = spawner;
+            if (riser != null) this.gridRiser = riser;
 
             cursorPosition = new Vector2Int(0, gridHeight / 2);
             GridX = cursorPosition.x;
@@ -187,8 +194,17 @@ namespace PuzzleAttack.Grid
         private void MoveCursor(int dx, int dy)
         {
             // Use current cursorPosition instead of GridX/GridY
-            int newX = Mathf.Clamp(cursorPosition.x + dx, 0, gridManager.gridWidth - 1);
-            int newY = Mathf.Clamp(cursorPosition.y + dy, 0, gridManager.gridHeight - 1);
+            int newX = Mathf.Clamp(cursorPosition.x + dx, 0, gridWidth - 1);
+            int newY = Mathf.Clamp(cursorPosition.y + dy, 0, gridHeight - 1);
+
+            Debug.Log($"[Cursor] MoveCursor called: from ({cursorPosition.x},{cursorPosition.y}) to ({newX},{newY}), direction=({dx},{dy})");
+
+            // Check if the new row is active (above visibility threshold)
+            if (!IsRowActive(newY))
+            {
+                Debug.Log($"[Cursor] Blocked movement to row {newY} - not yet active");
+                return; // Don't move cursor to inactive rows
+            }
 
             cursorPosition = new Vector2Int(newX, newY);
 
@@ -196,7 +212,32 @@ namespace PuzzleAttack.Grid
             GridX = newX;
             GridY = newY;
 
+            Debug.Log($"[Cursor] Movement successful! New position: ({newX},{newY})");
+
             UpdateCursorPosition(currentGridOffset);
+        }
+
+        private bool IsRowActive(int gridY)
+        {
+            // If no TileSpawner or GridRiser, assume all rows are active (backwards compatibility)
+            if (tileSpawner == null || gridRiser == null)
+            {
+                Debug.LogWarning($"[Cursor] IsRowActive bypassed - tileSpawner={tileSpawner != null}, gridRiser={gridRiser != null}");
+                return true;
+            }
+
+            // Get the real-time grid offset from GridRiser (not the cached value)
+            float realTimeOffset = gridRiser.CurrentGridOffset;
+
+            // Calculate the world Y position of this row
+            float worldY = gridY * tileSize + realTimeOffset;
+            float visibilityThreshold = 0f; // Only active when fully at y=0 or above
+
+            bool isActive = worldY >= visibilityThreshold;
+
+            Debug.Log($"[Cursor] Row {gridY} check: worldY={worldY:F3}, threshold={visibilityThreshold:F3}, offset={realTimeOffset:F3}, isActive={isActive}");
+
+            return isActive;
         }
 
         public void Swap()

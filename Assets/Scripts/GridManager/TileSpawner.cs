@@ -34,7 +34,7 @@ namespace PuzzleAttack.Grid
             // Create background tiles
             for (int x = 0; x < gridWidth; x++)
             {
-                for (int y = 0; y < gridHeight; y++)
+                for (int y = 0 - preloadRows; y < gridHeight; y++)
                 {
                     if (tileBackground != null)
                     {
@@ -85,7 +85,7 @@ namespace PuzzleAttack.Grid
             if (tile == null) return;
 
             float worldY = gridY * tileSize + currentGridOffset;
-            float visibilityThreshold = -0.33f * tileSize; // 66% visible = 33% below y=0
+            float visibilityThreshold = 0f; // Only active when fully at y=0 or above
 
             SpriteRenderer sr = tile.GetComponent<SpriteRenderer>();
             if (worldY >= visibilityThreshold)
@@ -106,7 +106,7 @@ namespace PuzzleAttack.Grid
 
             Tile tileScript = tile.GetComponent<Tile>();
             float worldY = tileScript.GridY * tileSize + currentGridOffset;
-            float visibilityThreshold = -0.33f * tileSize; // 66% visible
+            float visibilityThreshold = 0f; // Only active when fully at y=0 or above
 
             return worldY >= visibilityThreshold;
         }

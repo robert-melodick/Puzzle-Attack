@@ -8,8 +8,8 @@ namespace PuzzleAttack.Grid
     {
         #region Inspector Fields
 
-        [Header("Grid Settings")] public int gridWidth = 8;
-        public int gridHeight = 8;
+        [Header("Grid Settings")] public int gridWidth = 6;
+        public int gridHeight = 14;
         public float tileSize = 1f;
 
         [Header("Grid Initialization")] public int initialFillRows = 4; // How many rows to preload at start
@@ -94,8 +94,8 @@ namespace PuzzleAttack.Grid
             preloadGrid = new GameObject[gridWidth, preloadRows];
 
             // Initialize all components
-            cursorController.Initialize(this, tileSize, gridWidth, gridHeight);
             tileSpawner.Initialize(this, tileSize, grid, preloadGrid, gridWidth, gridHeight, preloadRows);
+            cursorController.Initialize(this, tileSize, gridWidth, gridHeight, tileSpawner, gridRiser);
             matchDetector.Initialize(grid, gridWidth, gridHeight);
             matchProcessor.Initialize(this, grid, matchDetector);
             gridRiser.Initialize(this, grid, preloadGrid, tileSpawner, cursorController, matchDetector, matchProcessor,
@@ -219,6 +219,16 @@ namespace PuzzleAttack.Grid
             if (leftSwapping || rightSwapping)
             {
                 Debug.Log($">>> SWAP BLOCKED - tiles swapping <<<");
+                return;
+            }
+
+            // Check if tiles are active (above visibility threshold)
+            bool leftActive = leftTile == null || tileSpawner.IsTileActive(leftTile, gridRiser.CurrentGridOffset);
+            bool rightActive = rightTile == null || tileSpawner.IsTileActive(rightTile, gridRiser.CurrentGridOffset);
+
+            if (!leftActive || !rightActive)
+            {
+                Debug.Log($">>> SWAP BLOCKED - tiles not yet active <<<");
                 return;
             }
 
