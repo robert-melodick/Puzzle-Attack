@@ -1,5 +1,5 @@
-using UnityEngine;
 using UnityEditor;
+using UnityEngine;
 
 [CustomEditor(typeof(MapNode))]
 public class MapNodeEditor : Editor
@@ -8,7 +8,7 @@ public class MapNodeEditor : Editor
     {
         DrawDefaultInspector();
 
-        MapNode node = (MapNode)target;
+        var node = (MapNode)target;
 
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField("Quick Actions", EditorStyles.boldLabel);
@@ -36,7 +36,8 @@ public class MapNodeEditor : Editor
         }
         else
         {
-            EditorGUILayout.HelpBox("Drag a MapNode into 'Node To Connect' field above to create or remove connections.", MessageType.Info);
+            EditorGUILayout.HelpBox(
+                "Drag a MapNode into 'Node To Connect' field above to create or remove connections.", MessageType.Info);
         }
 
         EditorGUILayout.Space(5);
@@ -55,6 +56,7 @@ public class MapNodeEditor : Editor
             {
                 node.Unlock();
             }
+
             EditorUtility.SetDirty(node);
         }
 

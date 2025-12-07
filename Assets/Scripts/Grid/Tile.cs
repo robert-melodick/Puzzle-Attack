@@ -15,6 +15,16 @@ namespace PuzzleAttack.Grid
 
         #endregion
 
+        #region Unity Lifecycle
+
+        private void Awake()
+        {
+            _audioSource = gameObject.AddComponent<AudioSource>();
+            _audioSource.playOnAwake = false;
+        }
+
+        #endregion
+
         #region Properties
 
         public int GridX { get; private set; }
@@ -24,7 +34,7 @@ namespace PuzzleAttack.Grid
         // Movement state - accessible by BlockSlipManager / GridManager
         public MovementState State { get; set; } = MovementState.Idle;
         public Vector2Int TargetGridPos { get; set; }
-        public int AnimationVersion { get; set; } = 0;
+        public int AnimationVersion { get; set; }
 
         // Convenience property
         public bool IsBusy => State != MovementState.Idle;
@@ -33,22 +43,12 @@ namespace PuzzleAttack.Grid
 
         #region Private Fields
 
-        private GridManager gridManager;
+        private GridManager _gridManager;
 
         [Header("Sound Effects")] public AudioClip landSound;
         public AudioClip matchSound;
 
-        private AudioSource audioSource;
-
-        #endregion
-
-        #region Unity Lifecycle
-
-        void Awake()
-        {
-            audioSource = gameObject.AddComponent<AudioSource>();
-            audioSource.playOnAwake = false;
-        }
+        private AudioSource _audioSource;
 
         #endregion
 
@@ -59,12 +59,12 @@ namespace PuzzleAttack.Grid
             GridX = x;
             GridY = y;
             TileType = type;
-            gridManager = manager;
+            _gridManager = manager;
             TargetGridPos = new Vector2Int(x, y);
         }
 
         /// <summary>
-        /// Call when this tile starts falling
+        ///     Call when this tile starts falling
         /// </summary>
         public void StartFalling(Vector2Int target)
         {
@@ -74,7 +74,7 @@ namespace PuzzleAttack.Grid
         }
 
         /// <summary>
-        /// Call when this tile starts a swap
+        ///     Call when this tile starts a swap
         /// </summary>
         public void StartSwapping(Vector2Int target)
         {
@@ -84,7 +84,7 @@ namespace PuzzleAttack.Grid
         }
 
         /// <summary>
-        /// Call when movement completes
+        ///     Call when movement completes
         /// </summary>
         public void FinishMovement()
         {
@@ -92,7 +92,7 @@ namespace PuzzleAttack.Grid
         }
 
         /// <summary>
-        /// Update the fall target (for BlockSlip retargeting)
+        ///     Update the fall target (for BlockSlip retargeting)
         /// </summary>
         public void RetargetFall(Vector2Int newTarget)
         {
@@ -102,20 +102,17 @@ namespace PuzzleAttack.Grid
 
         public void PlayLandSound()
         {
-            if (landSound != null && audioSource != null)
-            {
-                audioSource.PlayOneShot(landSound);
-            }
+            if (landSound != null && _audioSource != null) _audioSource.PlayOneShot(landSound);
         }
 
         public void PlayMatchSound(int combo = 1)
         {
-            if (matchSound != null && audioSource != null)
+            if (matchSound != null && _audioSource != null)
             {
-                float pitch = 1.0f + ((combo - 1) * 0.1f);
+                var pitch = 1.0f + (combo - 1) * 0.1f;
                 pitch = Mathf.Clamp(pitch, 0.5f, 2.0f);
-                audioSource.pitch = pitch;
-                audioSource.PlayOneShot(matchSound);
+                _audioSource.pitch = pitch;
+                _audioSource.PlayOneShot(matchSound);
             }
         }
 

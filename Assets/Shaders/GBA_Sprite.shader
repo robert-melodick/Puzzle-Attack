@@ -86,15 +86,15 @@ Shader "Universal Render Pipeline/2D/GBA Sprite"
             struct Attributes
             {
                 float4 positionOS : POSITION;
-                float4 color      : COLOR;
-                float2 texcoord   : TEXCOORD0;
+                float4 color : COLOR;
+                float2 texcoord : TEXCOORD0;
             };
 
             struct Varyings
             {
                 float4 positionHCS : SV_POSITION;
-                float4 color       : COLOR;
-                float2 uv          : TEXCOORD0;
+                float4 color : COLOR;
+                float2 uv : TEXCOORD0;
             };
 
             Varyings vert(Attributes IN)

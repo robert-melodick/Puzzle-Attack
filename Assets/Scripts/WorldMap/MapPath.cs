@@ -1,32 +1,33 @@
+using System;
 using UnityEngine;
 
 [ExecuteAlways] // Makes this script run in edit mode
 public class MapPath : MonoBehaviour
 {
-    [Header("Path Settings")]
-    public MapNode startNode;
+    [Header("Path Settings")] public MapNode startNode;
+
     public MapNode endNode;
     public bool isBidirectional = true;
     public bool isVisible = true; // Controls if the path is shown to player
-    
-    [Header("Path Appearance")]
-    public LineRenderer lineRenderer;
+
+    [Header("Path Appearance")] public LineRenderer lineRenderer;
+
     public float pathWidth = 0.1f;
     public Color visibleColor = Color.white;
-    public Color hiddenColor = new Color(1, 1, 1, 0); // Transparent
-    
-    [Header("Curved Path Settings")]
-    public bool useCurvedPath = false;
+    public Color hiddenColor = new(1, 1, 1, 0); // Transparent
+
+    [Header("Curved Path Settings")] public bool useCurvedPath;
+
     public Vector3[] customPathPoints; // For custom shaped paths
     public float curveHeight = 1f; // Height of curve for auto-generated curves
     public int curveResolution = 20; // Smoothness of curve
-    
-    void Awake()
+
+    private void Awake()
     {
         InitializeLineRenderer();
     }
 
-    void OnValidate()
+    private void OnValidate()
     {
         // Called when inspector values change (edit mode and play mode)
         if (lineRenderer == null)
@@ -45,25 +46,22 @@ public class MapPath : MonoBehaviour
         if (lineRenderer == null || lineRenderer.positionCount < 2)
             return null;
 
-        int count = lineRenderer.positionCount;
-        Vector3[] points = new Vector3[count];
-        for (int i = 0; i < count; i++)
+        var count = lineRenderer.positionCount;
+        var points = new Vector3[count];
+        for (var i = 0; i < count; i++)
         {
             points[i] = lineRenderer.GetPosition(i);
             points[i].z = 0f; // keep it 2D
         }
 
         // If we’re starting from the "end" node, reverse so the order matches movement
-        if (fromNode == endNode)
-        {
-            System.Array.Reverse(points);
-        }
+        if (fromNode == endNode) Array.Reverse(points);
 
         return points;
     }
 
 
-    void InitializeLineRenderer()
+    private void InitializeLineRenderer()
     {
         if (lineRenderer == null)
             lineRenderer = GetComponent<LineRenderer>();
@@ -71,34 +69,31 @@ public class MapPath : MonoBehaviour
         if (lineRenderer == null)
         {
             lineRenderer = gameObject.AddComponent<LineRenderer>();
-            if (!Application.isPlaying)
-            {
-                Debug.Log("LineRenderer component was missing. Added one automatically.");
-            }
+            if (!Application.isPlaying) Debug.Log("LineRenderer component was missing. Added one automatically.");
         }
 
         SetupLineRenderer();
         GeneratePath();
         UpdateVisibility();
     }
-    
-    void SetupLineRenderer()
+
+    private void SetupLineRenderer()
     {
         lineRenderer.startWidth = pathWidth;
         lineRenderer.endWidth = pathWidth;
         lineRenderer.useWorldSpace = true;
 
         lineRenderer.sortingLayerName = "Default";
-        lineRenderer.sortingOrder = 1; 
+        lineRenderer.sortingOrder = 1;
 
         // Use sharedMaterial in edit mode, material in play mode
-        Material targetMat = Application.isPlaying 
-            ? lineRenderer.material 
+        var targetMat = Application.isPlaying
+            ? lineRenderer.material
             : lineRenderer.sharedMaterial;
 
         if (targetMat == null)
         {
-            Shader shader = Shader.Find("GBA_Sprite");
+            var shader = Shader.Find("GBA_Sprite");
             if (shader == null)
             {
                 shader = Shader.Find("Sprites/Default");
@@ -110,7 +105,7 @@ public class MapPath : MonoBehaviour
                 targetMat = new Material(shader);
 
                 if (Application.isPlaying)
-                    lineRenderer.material = targetMat;      // per-instance at runtime
+                    lineRenderer.material = targetMat; // per-instance at runtime
                 else
                     lineRenderer.sharedMaterial = targetMat; // shared in edit mode
             }
@@ -120,29 +115,24 @@ public class MapPath : MonoBehaviour
             }
         }
 
-        if (targetMat != null)
-        {
-            targetMat.color = Color.white;
-        }
+        if (targetMat != null) targetMat.color = Color.white;
 
         lineRenderer.startColor = visibleColor;
         lineRenderer.endColor = visibleColor;
 
         if (Application.isPlaying)
-        {
-            Debug.Log($"LineRenderer setup: width={pathWidth}, sortingOrder={lineRenderer.sortingOrder}, material={targetMat?.name}, startColor={lineRenderer.startColor}, endColor={lineRenderer.endColor}");
-        }
+            Debug.Log(
+                $"LineRenderer setup: width={pathWidth}, sortingOrder={lineRenderer.sortingOrder}, material={targetMat?.name}, startColor={lineRenderer.startColor}, endColor={lineRenderer.endColor}");
     }
 
-    
-    void GeneratePath()
+
+    private void GeneratePath()
     {
         if (startNode == null || endNode == null)
         {
             if (Application.isPlaying)
-            {
-                Debug.LogWarning($"Cannot generate path: startNode={(startNode != null ? startNode.name : "null")}, endNode={(endNode != null ? endNode.name : "null")}");
-            }
+                Debug.LogWarning(
+                    $"Cannot generate path: startNode={(startNode != null ? startNode.name : "null")}, endNode={(endNode != null ? endNode.name : "null")}");
             return;
         }
 
@@ -161,8 +151,8 @@ public class MapPath : MonoBehaviour
         else
         {
             lineRenderer.positionCount = 2;
-            Vector3 startPos = startNode.transform.position;
-            Vector3 endPos = endNode.transform.position;
+            var startPos = startNode.transform.position;
+            var endPos = endNode.transform.position;
 
             // Ensure Z position is 0 for 2D
             startPos.z = 0;
@@ -172,63 +162,58 @@ public class MapPath : MonoBehaviour
             lineRenderer.SetPosition(1, endPos);
 
             if (Application.isPlaying)
-            {
                 Debug.Log($"Path generated from {startNode.name} at {startPos} to {endNode.name} at {endPos}");
-            }
         }
     }
-    
-    void GenerateCurvedPath()
+
+    private void GenerateCurvedPath()
     {
-        Vector3 start = startNode.transform.position;
-        Vector3 end = endNode.transform.position;
+        var start = startNode.transform.position;
+        var end = endNode.transform.position;
 
         // Ensure Z position is 0 for 2D
         start.z = 0;
         end.z = 0;
 
-        Vector3 midPoint = (start + end) / 2f;
+        var midPoint = (start + end) / 2f;
 
         // Calculate perpendicular direction for curve
-        Vector3 direction = (end - start).normalized;
-        Vector3 perpendicular = new Vector3(-direction.y, direction.x, 0) * curveHeight;
-        Vector3 controlPoint = midPoint + perpendicular;
+        var direction = (end - start).normalized;
+        var perpendicular = new Vector3(-direction.y, direction.x, 0) * curveHeight;
+        var controlPoint = midPoint + perpendicular;
 
         // Generate bezier curve points
         lineRenderer.positionCount = curveResolution;
-        for (int i = 0; i < curveResolution; i++)
+        for (var i = 0; i < curveResolution; i++)
         {
-            float t = i / (float)(curveResolution - 1);
-            Vector3 point = CalculateQuadraticBezierPoint(t, start, controlPoint, end);
+            var t = i / (float)(curveResolution - 1);
+            var point = CalculateQuadraticBezierPoint(t, start, controlPoint, end);
             point.z = 0; // Ensure all points are at Z=0
             lineRenderer.SetPosition(i, point);
         }
     }
-    
-    Vector3 CalculateQuadraticBezierPoint(float t, Vector3 p0, Vector3 p1, Vector3 p2)
+
+    private Vector3 CalculateQuadraticBezierPoint(float t, Vector3 p0, Vector3 p1, Vector3 p2)
     {
-        float u = 1 - t;
-        float tt = t * t;
-        float uu = u * u;
-        
-        Vector3 point = uu * p0;
+        var u = 1 - t;
+        var tt = t * t;
+        var uu = u * u;
+
+        var point = uu * p0;
         point += 2 * u * t * p1;
         point += tt * p2;
-        
+
         return point;
     }
-    
+
     public void UpdateVisibility()
     {
         // Ensure material color is white (not tinting)
-        Material targetMat = Application.isPlaying 
-            ? lineRenderer.material 
+        var targetMat = Application.isPlaying
+            ? lineRenderer.material
             : lineRenderer.sharedMaterial;
 
-        if (targetMat != null)
-        {
-            targetMat.color = Color.white;
-        }
+        if (targetMat != null) targetMat.color = Color.white;
 
         if (lineRenderer == null)
             return;
@@ -245,41 +230,36 @@ public class MapPath : MonoBehaviour
             shouldBeVisible = isVisible && startNode != null && startNode.isUnlocked;
 
             if (!shouldBeVisible && Application.isPlaying)
-            {
-                Debug.LogWarning($"MapPath not visible: isVisible={isVisible}, startNode={(startNode != null ? startNode.name : "null")}, startNodeUnlocked={(startNode != null ? startNode.isUnlocked.ToString() : "N/A")}");
-            }
+                Debug.LogWarning(
+                    $"MapPath not visible: isVisible={isVisible}, startNode={(startNode != null ? startNode.name : "null")}, startNodeUnlocked={(startNode != null ? startNode.isUnlocked.ToString() : "N/A")}");
         }
 
         lineRenderer.enabled = shouldBeVisible;
 
         // Set vertex colors
-        Color targetColor = shouldBeVisible ? visibleColor : hiddenColor;
+        var targetColor = shouldBeVisible ? visibleColor : hiddenColor;
         lineRenderer.startColor = targetColor;
         lineRenderer.endColor = targetColor;
 
         // Ensure material color is white (not tinting)
-        if (lineRenderer.material != null)
-        {
-            lineRenderer.material.color = Color.white;
-        }
+        if (lineRenderer.material != null) lineRenderer.material.color = Color.white;
 
         if (Application.isPlaying)
-        {
-            Debug.Log($"UpdateVisibility: enabled={shouldBeVisible}, visibleColor={visibleColor}, targetColor={targetColor}");
-        }
+            Debug.Log(
+                $"UpdateVisibility: enabled={shouldBeVisible}, visibleColor={visibleColor}, targetColor={targetColor}");
     }
-    
+
     public bool CanTraverse(MapNode from)
     {
         if (from == startNode && endNode.isUnlocked)
             return true;
-            
+
         if (isBidirectional && from == endNode && startNode.isUnlocked)
             return true;
-            
+
         return false;
     }
-    
+
     public MapNode GetDestination(MapNode from)
     {
         if (from == startNode)
@@ -291,7 +271,7 @@ public class MapPath : MonoBehaviour
 
     // Editor utility: Right-click on the component and select "Regenerate Path"
     [ContextMenu("Regenerate Path")]
-    void RegeneratePath()
+    private void RegeneratePath()
     {
         InitializeLineRenderer();
     }

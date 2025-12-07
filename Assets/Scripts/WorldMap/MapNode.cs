@@ -1,39 +1,38 @@
-using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine;
 
 [ExecuteAlways] // Makes this script run in edit mode
 public class MapNode : MonoBehaviour
 {
-    [Header("Node Settings")]
-    public string nodeName;
-    public bool isUnlocked = false;
-    public bool isCompleted = false;
-    
-    [Header("Visual Settings")]
-    public Sprite unlockedSprite;
+    [Header("Node Settings")] public string nodeName;
+
+    public bool isUnlocked;
+    public bool isCompleted;
+
+    [Header("Visual Settings")] public Sprite unlockedSprite;
+
     public Sprite lockedSprite;
     public Sprite completedSprite;
     public Color unlockedColor = Color.white;
     public Color lockedColor = Color.gray;
-    
-    [Header("Connections")]
-    public List<MapPath> connectedPaths = new List<MapPath>();
 
-    [Header("Quick Connect (Editor Only)")]
-    [Tooltip("Drag a node here and use the context menu to connect")]
+    [Header("Connections")] public List<MapPath> connectedPaths = new();
+
+    [Header("Quick Connect (Editor Only)")] [Tooltip("Drag a node here and use the context menu to connect")]
     public MapNode nodeToConnect;
+
     public bool makeConnectionBidirectional = true;
-    public bool makeConnectionCurved = false;
+    public bool makeConnectionCurved;
 
     private SpriteRenderer spriteRenderer;
-    
-    void Awake()
+
+    private void Awake()
     {
         spriteRenderer = GetComponent<SpriteRenderer>();
         UpdateVisuals();
     }
 
-    void OnValidate()
+    private void OnValidate()
     {
         // Called when inspector values change (edit mode and play mode)
         if (spriteRenderer == null)
@@ -41,7 +40,7 @@ public class MapNode : MonoBehaviour
 
         UpdateVisuals();
     }
-    
+
     public void UpdateVisuals()
     {
         if (spriteRenderer == null)
@@ -70,7 +69,7 @@ public class MapNode : MonoBehaviour
             spriteRenderer.color = isUnlocked ? unlockedColor : lockedColor;
         }
     }
-    
+
     public void Unlock()
     {
         isUnlocked = true;
@@ -78,12 +77,8 @@ public class MapNode : MonoBehaviour
 
         // Update connected paths visibility
         foreach (var path in connectedPaths)
-        {
             if (path != null)
-            {
                 path.UpdateVisibility();
-            }
-        }
     }
 
     public void Complete()
@@ -94,13 +89,13 @@ public class MapNode : MonoBehaviour
 
     // Editor utilities: Right-click on the component for quick actions
     [ContextMenu("Unlock Node")]
-    void UnlockNode()
+    private void UnlockNode()
     {
         Unlock();
     }
 
     [ContextMenu("Lock Node")]
-    void LockNode()
+    private void LockNode()
     {
         isUnlocked = false;
         isCompleted = false;
@@ -108,19 +103,19 @@ public class MapNode : MonoBehaviour
     }
 
     [ContextMenu("Complete Node")]
-    void CompleteNode()
+    private void CompleteNode()
     {
         Complete();
     }
 
     [ContextMenu("Update Visuals")]
-    void RefreshVisuals()
+    private void RefreshVisuals()
     {
         UpdateVisuals();
     }
 
     [ContextMenu("Connect to Selected Node")]
-    void ConnectToSelectedNode()
+    private void ConnectToSelectedNode()
     {
         if (nodeToConnect == null)
         {
@@ -135,7 +130,7 @@ public class MapNode : MonoBehaviour
     }
 
     [ContextMenu("Disconnect from Selected Node")]
-    void DisconnectFromSelectedNode()
+    private void DisconnectFromSelectedNode()
     {
         if (nodeToConnect == null)
         {
@@ -160,21 +155,19 @@ public class MapNode : MonoBehaviour
 
         // Check if connection already exists
         foreach (var path in connectedPaths)
-        {
             if (path != null && (path.startNode == targetNode || path.endNode == targetNode))
             {
                 Debug.LogWarning($"Path already exists between {nodeName} and {targetNode.nodeName}");
                 return path;
             }
-        }
 
         // Create new GameObject for the path
-        GameObject pathObj = new GameObject($"Path_{nodeName}_to_{targetNode.nodeName}");
+        var pathObj = new GameObject($"Path_{nodeName}_to_{targetNode.nodeName}");
         pathObj.transform.SetParent(transform.parent); // Put in same parent as nodes
         pathObj.transform.position = (transform.position + targetNode.transform.position) / 2f;
 
         // Add MapPath component
-        MapPath newPath = pathObj.AddComponent<MapPath>();
+        var newPath = pathObj.AddComponent<MapPath>();
         newPath.startNode = this;
         newPath.endNode = targetNode;
         newPath.isBidirectional = bidirectional;
@@ -200,13 +193,11 @@ public class MapNode : MonoBehaviour
 
         MapPath pathToRemove = null;
         foreach (var path in connectedPaths)
-        {
             if (path != null && (path.startNode == targetNode || path.endNode == targetNode))
             {
                 pathToRemove = path;
                 break;
             }
-        }
 
         if (pathToRemove != null)
         {
@@ -214,13 +205,9 @@ public class MapNode : MonoBehaviour
             targetNode.connectedPaths.Remove(pathToRemove);
 
             if (Application.isPlaying)
-            {
                 Destroy(pathToRemove.gameObject);
-            }
             else
-            {
                 DestroyImmediate(pathToRemove.gameObject);
-            }
 
             Debug.Log($"Removed path between {nodeName} and {targetNode.nodeName}");
         }

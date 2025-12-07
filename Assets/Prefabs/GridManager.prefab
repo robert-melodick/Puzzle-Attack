@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 1110068567226200326}
   - component: {fileID: 3915118934426842190}
   - component: {fileID: 5347899561248015888}
+  - component: {fileID: 6975869169476460448}
   m_Layer: 0
   m_Name: GridManager
   m_TagString: Untagged
@@ -54,29 +55,14 @@ MonoBehaviour:
   tileSize: 1
   initialFillRows: 4
   preloadRows: 2
-  normalRiseSpeed: 0.5
-  fastRiseSpeed: 2
-  gracePeriod: 2
-  enableBreathingRoom: 1
-  breathingRoomPerTile: 0.2
-  maxBreathingRoom: 5
-  processMatchDuration: 1
-  blinkSpeed: 0.1
-  delayBetweenPops: 0.3
-  scoreManager: {fileID: 0}
-  tilePrefab: {fileID: 5124203171544064163, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
-  tileSprites:
-  - {fileID: 21300000, guid: b0c3bc646acd2b045a42c1e8410cd8b7, type: 3}
-  - {fileID: 21300000, guid: a7f33a8372f8500428b0cdc89fcf4085, type: 3}
-  - {fileID: 21300000, guid: 45fecc827bd8e054ab1518322c2378b5, type: 3}
-  - {fileID: 21300000, guid: 269de9c5a644a1d4fab9b19311e9741f, type: 3}
-  - {fileID: 21300000, guid: 330e99a370a40324fb517842798c657d, type: 3}
-  - {fileID: 21300000, guid: 59bee4ec57757b54585bd93792af49e4, type: 3}
-  tileBackground: {fileID: 5685540458441023407, guid: 7d87b9ae930c7be4c9eb3cf8685966e7, type: 3}
-  cursorPrefab: {fileID: 1204185684387116732, guid: 5e6392687c4a47942aa8f119ab4548ce, type: 3}
-  cursorWidth: 2
-  cursorHeight: 1
-  cursorColor: {r: 1, g: 1, b: 1, a: 0.5}
+  swapDuration: 0.1
+  dropDuration: 0.15
+  cursorController: {fileID: 3915118934426842190}
+  gridRiser: {fileID: 4701406788802530226}
+  matchDetector: {fileID: 1087316669718845505}
+  matchProcessor: {fileID: 5347899561248015888}
+  tileSpawner: {fileID: 1110068567226200326}
+  blockSlipManager: {fileID: 6975869169476460448}
 --- !u!114 &1087316669718845505
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -101,6 +87,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fbe9bf41ad3f804469bb1c7a4861a02e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  normalRiseSpeed: 0.25
+  fastRiseSpeed: 2
+  gracePeriod: 3
+  enableBreathingRoom: 1
+  breathingRoomPerTile: 0.2
+  maxBreathingRoom: 5
+  catchUpMultiplier: 1.5
+  timeDebtText: {fileID: 0}
+  breathingRoomText: {fileID: 0}
+  gracePeriodText: {fileID: 0}
 --- !u!114 &1110068567226200326
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -113,6 +109,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 72a4aec296be4b7438d0f9eecfa87829, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  tilePrefab: {fileID: 5124203171544064163, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
+  tileSprites:
+  - {fileID: 21300000, guid: 330e99a370a40324fb517842798c657d, type: 3}
+  - {fileID: 21300000, guid: 59bee4ec57757b54585bd93792af49e4, type: 3}
+  - {fileID: 21300000, guid: 45fecc827bd8e054ab1518322c2378b5, type: 3}
+  - {fileID: 21300000, guid: 269de9c5a644a1d4fab9b19311e9741f, type: 3}
+  - {fileID: 21300000, guid: a7f33a8372f8500428b0cdc89fcf4085, type: 3}
+  - {fileID: 21300000, guid: b0c3bc646acd2b045a42c1e8410cd8b7, type: 3}
+  tileBackground: {fileID: 5685540458441023407, guid: 7d87b9ae930c7be4c9eb3cf8685966e7, type: 3}
 --- !u!114 &3915118934426842190
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -125,6 +130,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: abad5017706eb5a4894ada82c0b5041f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  cursorWidth: 2
+  cursorHeight: 1
+  cursorColor: {r: 1, g: 1, b: 1, a: 0.5}
+  cursorPrefab: {fileID: 1204185684387116732, guid: 5e6392687c4a47942aa8f119ab4548ce, type: 3}
+  blockSlipColor: {r: 0, g: 1, b: 0.5, a: 0.7}
+  gridManager: {fileID: 2877464028446485601}
+  gridRiser: {fileID: 4701406788802530226}
 --- !u!114 &5347899561248015888
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -135,5 +147,22 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 275b4aa7f6314ca428171e569cc74a3f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  processMatchDuration: 0.5
+  blinkSpeed: 0.15
+  delayBetweenPops: 0.3
+  scoreManager: {fileID: 0}
+  isProcessingMatches: 0
+--- !u!114 &6975869169476460448
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 253549084482168555}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6abec0a710b776848822c924d4dc4edc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
