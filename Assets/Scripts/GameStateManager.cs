@@ -30,7 +30,7 @@ public class GameStateManager : MonoBehaviour
 
     void Awake()
     {
-        // Singleton pattern
+        // Singleton pattern (per-scene, not persistent)
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
@@ -38,7 +38,8 @@ public class GameStateManager : MonoBehaviour
         }
 
         Instance = this;
-        DontDestroyOnLoad(gameObject); // Optional: persist across scenes
+        // Don't persist across scenes - each scene gets its own GameStateManager
+        // This prevents event subscription issues when restarting
     }
 
     void Update()
@@ -65,14 +66,12 @@ public class GameStateManager : MonoBehaviour
     {
         if (IsPaused)
         {
-            Debug.LogWarning("Game is already paused!");
             return;
         }
 
         currentState = GameState.Paused;
         Time.timeScale = 0f;
 
-        Debug.Log("Game Paused");
         OnGamePaused?.Invoke();
     }
 
@@ -83,7 +82,6 @@ public class GameStateManager : MonoBehaviour
     {
         if (!IsPaused)
         {
-            Debug.LogWarning("Game is not paused!");
             return;
         }
 
@@ -121,7 +119,6 @@ public class GameStateManager : MonoBehaviour
         currentState = GameState.Playing;
         Time.timeScale = 1f;
 
-        Debug.Log("Game Restarted");
         OnGameRestarted?.Invoke();
 
         // Reload the current scene
@@ -135,19 +132,20 @@ public class GameStateManager : MonoBehaviour
     /// </summary>
     public void QuitGame()
     {
-        Debug.Log("Quitting game...");
-
-        #if UNITY_EDITOR
-        UnityEditor.EditorApplication.isPlaying = false;
-        #else
-        Application.Quit();
-        #endif
+        // Return to main menu
+        UnityEngine.SceneManagement.SceneManager.LoadScene("main_menu");
     }
 
     void OnDestroy()
     {
         // Always restore time scale when this object is destroyed
         Time.timeScale = 1f;
+
+        // Clear singleton reference if this is the current instance
+        if (Instance == this)
+        {
+            Instance = null;
+        }
     }
 }
 
