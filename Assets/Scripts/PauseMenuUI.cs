@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 
 /// <summary>
@@ -42,6 +43,9 @@ public class PauseMenuUI : MonoBehaviour
         if (quitButton != null)
             quitButton.onClick.AddListener(OnQuitClicked);
 
+        // Ensure EventSystem exists
+        EnsureEventSystemExists();
+
         // Hide menu initially
         if (pauseMenuPanel != null)
             pauseMenuPanel.SetActive(false);
@@ -67,6 +71,13 @@ public class PauseMenuUI : MonoBehaviour
             // Update title if exists
             if (titleText != null)
                 titleText.text = "PAUSED";
+
+            // Ensure all buttons are visible and clickable for pause menu
+            if (resumeButton != null)
+                resumeButton.gameObject.SetActive(true);
+
+            // Ensure buttons are interactable
+            EnsureButtonsClickable();
         }
     }
 
@@ -86,9 +97,12 @@ public class PauseMenuUI : MonoBehaviour
             if (titleText != null)
                 titleText.text = "GAME OVER";
 
-            // Optional: Hide resume button on game over
+            // Hide resume button on game over
             if (resumeButton != null)
                 resumeButton.gameObject.SetActive(false);
+
+            // Ensure buttons are interactable and don't have frozen animators
+            EnsureButtonsClickable();
         }
     }
 
@@ -109,5 +123,74 @@ public class PauseMenuUI : MonoBehaviour
     {
         if (GameStateManager.Instance != null)
             GameStateManager.Instance.QuitGame();
+    }
+
+    /// <summary>
+    /// Ensures buttons are clickable even when Time.timeScale = 0.
+    /// Fixes issue where button animations freeze and prevent clicks.
+    /// </summary>
+    void EnsureButtonsClickable()
+    {
+        // Make sure buttons are interactable
+        if (resumeButton != null)
+        {
+            resumeButton.interactable = true;
+            DisableButtonAnimator(resumeButton);
+        }
+
+        if (restartButton != null)
+        {
+            restartButton.interactable = true;
+            DisableButtonAnimator(restartButton);
+        }
+
+        if (quitButton != null)
+        {
+            quitButton.interactable = true;
+            DisableButtonAnimator(quitButton);
+        }
+
+        // Ensure the panel itself isn't blocking raycasts
+        CanvasGroup canvasGroup = pauseMenuPanel.GetComponent<CanvasGroup>();
+        if (canvasGroup != null)
+        {
+            canvasGroup.interactable = true;
+            canvasGroup.blocksRaycasts = true;
+        }
+    }
+
+    /// <summary>
+    /// Disables Animator on button to prevent animation freezing issues when Time.timeScale = 0.
+    /// </summary>
+    void DisableButtonAnimator(Button button)
+    {
+        if (button == null) return;
+
+        Animator animator = button.GetComponent<Animator>();
+        if (animator != null)
+        {
+            // Disable animator to prevent frozen transitions from blocking clicks
+            animator.enabled = false;
+        }
+    }
+
+    /// <summary>
+    /// Ensures an EventSystem exists in the scene for UI interaction.
+    /// </summary>
+    void EnsureEventSystemExists()
+    {
+        EventSystem eventSystem = EventSystem.current;
+        if (eventSystem == null)
+        {
+            GameObject eventSystemObj = new GameObject("EventSystem");
+            eventSystemObj.AddComponent<EventSystem>();
+            eventSystemObj.AddComponent<StandaloneInputModule>();
+            Debug.LogWarning("No EventSystem found! Created one automatically.");
+        }
+        else
+        {
+            // Make sure it's enabled
+            eventSystem.enabled = true;
+        }
     }
 }

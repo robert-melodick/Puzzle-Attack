@@ -87,8 +87,6 @@ public class GameStateManager : MonoBehaviour
 
         currentState = GameState.Playing;
         Time.timeScale = 1f;
-
-        Debug.Log("Game Resumed");
         OnGameResumed?.Invoke();
     }
 
@@ -99,14 +97,11 @@ public class GameStateManager : MonoBehaviour
     {
         if (IsGameOver)
         {
-            Debug.LogWarning("Game is already over!");
             return;
         }
 
         currentState = GameState.GameOver;
         Time.timeScale = 0f; // Stop the game
-
-        Debug.Log("Game Over!");
         OnGameOver?.Invoke();
     }
 
