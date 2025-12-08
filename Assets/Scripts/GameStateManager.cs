@@ -1,5 +1,6 @@
 using UnityEngine;
 using System;
+using TMPro;
 
 /// <summary>
 /// Central authority for game state management.
@@ -16,17 +17,24 @@ public class GameStateManager : MonoBehaviour
     [Header("Pause Settings")]
     [SerializeField] private bool canPauseDuringGameOver = false;
 
+    [Header("Playtime Tracking")]
+    [SerializeField] private TextMeshProUGUI playtimeText;
+
     // Events for state changes (UI and other systems can subscribe)
     public event Action OnGamePaused;
     public event Action OnGameResumed;
     public event Action OnGameOver;
     public event Action OnGameRestarted;
 
+    // Playtime tracking
+    private float playtime = 0f;
+
     // Public properties
     public bool IsPaused => currentState == GameState.Paused;
     public bool IsPlaying => currentState == GameState.Playing;
     public bool IsGameOver => currentState == GameState.GameOver;
     public GameState CurrentState => currentState;
+    public float Playtime => playtime;
 
     void Awake()
     {
@@ -44,6 +52,13 @@ public class GameStateManager : MonoBehaviour
 
     void Update()
     {
+        // Track playtime (only during active gameplay, not during pause/gameover)
+        if (IsPlaying)
+        {
+            playtime += Time.deltaTime;
+            UpdatePlaytimeDisplay();
+        }
+
         // Toggle pause with ESC key (you can customize this)
         if (Input.GetKeyDown(KeyCode.Escape))
         {
@@ -113,6 +128,7 @@ public class GameStateManager : MonoBehaviour
     {
         currentState = GameState.Playing;
         Time.timeScale = 1f;
+        playtime = 0f; // Reset playtime on restart
 
         OnGameRestarted?.Invoke();
 
@@ -129,6 +145,28 @@ public class GameStateManager : MonoBehaviour
     {
         // Return to main menu
         UnityEngine.SceneManagement.SceneManager.LoadScene("main_menu");
+    }
+
+    /// <summary>
+    /// Updates the playtime display text with formatted time (MM:SS.mmm or HH:MM:SS.mmm)
+    /// </summary>
+    private void UpdatePlaytimeDisplay()
+    {
+        if (playtimeText == null) return;
+
+        int hours = Mathf.FloorToInt(playtime / 3600f);
+        int minutes = Mathf.FloorToInt((playtime % 3600f) / 60f);
+        int seconds = Mathf.FloorToInt(playtime % 60f);
+        int milliseconds = Mathf.FloorToInt((playtime * 1000f) % 1000f);
+
+        if (hours > 0)
+        {
+            playtimeText.text = $"{hours:00}:{minutes:00}:{seconds:00}.{milliseconds:000}";
+        }
+        else
+        {
+            playtimeText.text = $"{minutes:00}:{seconds:00}.{milliseconds:000}";
+        }
     }
 
     void OnDestroy()

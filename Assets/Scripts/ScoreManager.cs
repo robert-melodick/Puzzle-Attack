@@ -50,7 +50,7 @@ public class ScoreManager : MonoBehaviour
 
     private void UpdateUI()
     {
-        var scoreString = $"Score: {currentScore}";
+        var scoreString = currentScore.ToString("D9");
         var comboString = $"Combo x{currentCombo}";
 
         // Update TextMeshPro if assigned
