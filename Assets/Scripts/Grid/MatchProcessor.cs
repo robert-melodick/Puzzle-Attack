@@ -70,8 +70,11 @@ namespace PuzzleAttack.Grid
                 // Add score once for all tiles matched from this action
                 if (scoreManager != null) scoreManager.AddScore(totalTiles);
 
-                // Add breathing room based on tiles matched
-                _gridManager.AddBreathingRoom(totalTiles);
+                // Add breathing room only for combos (not the first match)
+                if (currentCombo > 0)
+                {
+                    _gridManager.AddBreathingRoom(totalTiles);
+                }
 
                 // All groups from this match use the same combo number
                 var comboNumber = currentCombo + 1;
@@ -131,8 +134,11 @@ namespace PuzzleAttack.Grid
             // Add score once for all tiles matched from this action
             if (scoreManager != null) scoreManager.AddScore(totalTiles);
 
-            // Add breathing room based on tiles matched
-            _gridManager.AddBreathingRoom(totalTiles);
+            // Add breathing room only for combos (not the first match)
+            if (currentCombo > 0)
+            {
+                _gridManager.AddBreathingRoom(totalTiles);
+            }
 
             // All groups from this match use the same combo number
             var comboNumber = currentCombo + 1;

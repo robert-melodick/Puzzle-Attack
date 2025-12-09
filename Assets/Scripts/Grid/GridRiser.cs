@@ -15,14 +15,16 @@ namespace PuzzleAttack.Grid
         public int maxSpeedLevel = 99; // Maximum speed level
         public float gracePeriod = 2f; // Seconds before game over when block reaches top
 
-        [Header("Breathing Room")] 
+        [Header("Breathing Room")]
         public bool enableBreathingRoom = true; // Toggle breathing room feature
         public float breathingRoomPerTile = 0.2f; // Seconds of breathing room per tile matched
         public float maxBreathingRoom = 5f; // Maximum breathing room duration
+        public float breathingRoomFlashSpeed = 2f; // Speed of text flash animation
 
         [Header("Catch-up Mechanics")]
         public float catchUpMultiplier = 1.5f; // Speed multiplier when catching up from pauses (1.5 = 50% faster)
 
+        [Header("UI Elements")]
         [SerializeField]
         private TextMeshProUGUI timeDebtText;
         [SerializeField]
@@ -31,9 +33,15 @@ namespace PuzzleAttack.Grid
         private TextMeshProUGUI gracePeriodText;
         [SerializeField]
         private TextMeshProUGUI speedLevelText;
-        
+        [SerializeField]
+        private GameObject breathingRoomImage; // Image to show when breathing room is active
+        [SerializeField]
+        private TextMeshProUGUI breathingRoomFlashText; // Text to flash when breathing room is active
+
         private float _breathingRoomTimer; // Time remaining before grid resumes rising
         private float _speedLevelTimer; // Time until next speed level increase
+        private bool _isBreathingRoomActive; // Track if breathing room is currently active
+        private Coroutine _breathingRoomFlashCoroutine; // Reference to the flash coroutine
 
         private CursorController _cursorController;
         private float _gracePeriodTimer = 1.5f;
@@ -97,6 +105,12 @@ namespace PuzzleAttack.Grid
             _breathingRoomTimer = Mathf.Min(_breathingRoomTimer + additionalTime, maxBreathingRoom);
             Debug.Log(
                 $"Breathing room: +{additionalTime:F2}s for {tilesMatched} tiles (total: {_breathingRoomTimer:F2}s)");
+
+            // Activate breathing room UI if not already active
+            if (!_isBreathingRoomActive)
+            {
+                ActivateBreathingRoomUI();
+            }
         }
 
         public void DisplayDebugInfo()
@@ -132,11 +146,15 @@ namespace PuzzleAttack.Grid
                     Debug.Log($"Speed Level increased to {speedLevel}! Grid speed: {GetSpeedForLevel():F3} units/s");
                 }
 
-                // Handle breathing room countdown
-                if (_breathingRoomTimer > 0f)
+                // Handle breathing room countdown (only when not processing matches)
+                if (_breathingRoomTimer > 0f && !_matchProcessor.isProcessingMatches)
                 {
                     _breathingRoomTimer -= Time.deltaTime;
-                    if (_breathingRoomTimer < 0f) _breathingRoomTimer = 0f;
+                    if (_breathingRoomTimer <= 0f)
+                    {
+                        _breathingRoomTimer = 0f;
+                        DeactivateBreathingRoomUI();
+                    }
                 }
 
                 // Handle grace period separately
@@ -174,6 +192,11 @@ namespace PuzzleAttack.Grid
                 {
                     // Pause for match processing, but don't accumulate time debt
                     // (player shouldn't be penalized for making matches)
+                }
+                else if (_breathingRoomTimer > 0f)
+                {
+                    // Pause for breathing room, don't accumulate time debt
+                    // (player earned this break through combos)
                 }
                 else
                 {
@@ -346,6 +369,86 @@ namespace PuzzleAttack.Grid
         private void SetSpeedLevel(int amount)
         {
             speedLevel = amount;
+        }
+
+        private void ActivateBreathingRoomUI()
+        {
+            _isBreathingRoomActive = true;
+
+            // Activate the image
+            if (breathingRoomImage != null)
+            {
+                breathingRoomImage.SetActive(true);
+            }
+
+            // Start flashing the text
+            if (breathingRoomFlashText != null)
+            {
+                breathingRoomFlashText.gameObject.SetActive(true);
+                if (_breathingRoomFlashCoroutine != null)
+                {
+                    StopCoroutine(_breathingRoomFlashCoroutine);
+                }
+                _breathingRoomFlashCoroutine = StartCoroutine(FlashBreathingRoomText());
+            }
+
+            Debug.Log("Breathing room UI activated!");
+        }
+
+        private void DeactivateBreathingRoomUI()
+        {
+            _isBreathingRoomActive = false;
+
+            // Deactivate the image
+            if (breathingRoomImage != null)
+            {
+                breathingRoomImage.SetActive(false);
+            }
+
+            // Stop flashing the text
+            if (_breathingRoomFlashCoroutine != null)
+            {
+                StopCoroutine(_breathingRoomFlashCoroutine);
+                _breathingRoomFlashCoroutine = null;
+            }
+
+            // Hide the text
+            if (breathingRoomFlashText != null)
+            {
+                breathingRoomFlashText.gameObject.SetActive(false);
+            }
+
+            Debug.Log("Breathing room UI deactivated!");
+        }
+
+        private IEnumerator FlashBreathingRoomText()
+        {
+            if (breathingRoomFlashText == null) yield break;
+
+            Color originalColor = breathingRoomFlashText.color;
+
+            while (_isBreathingRoomActive)
+            {
+                // Fade out
+                float alpha = 1f;
+                while (alpha > 0f)
+                {
+                    alpha -= Time.deltaTime * breathingRoomFlashSpeed;
+                    breathingRoomFlashText.color = new Color(originalColor.r, originalColor.g, originalColor.b, Mathf.Max(0f, alpha));
+                    yield return null;
+                }
+
+                // Fade in
+                while (alpha < 1f)
+                {
+                    alpha += Time.deltaTime * breathingRoomFlashSpeed;
+                    breathingRoomFlashText.color = new Color(originalColor.r, originalColor.g, originalColor.b, Mathf.Min(1f, alpha));
+                    yield return null;
+                }
+            }
+
+            // Restore original color when done
+            breathingRoomFlashText.color = originalColor;
         }
     }
 }
