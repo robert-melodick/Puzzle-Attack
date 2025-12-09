@@ -5,19 +5,46 @@ using UnityEngine;
 
 public class ScoreManager : MonoBehaviour
 {
-    [Header("Score Settings")] public int pointsPerTile = 10;
-
+    [Header("Score Settings")]
+    public int pointsPerTile = 10;
     public float comboMultiplier = 0.5f; // Each combo adds 50% more points
 
-    [Header("OR use TextMeshPro (TMP)")] public TextMeshProUGUI scoreText; // TextMeshPro
+    public GameObject scorePanel;
+    public TextMeshProUGUI highScoreText;
+    public TextMeshProUGUI scoreText;
+    public TextMeshProUGUI comboText;
 
-    public TextMeshProUGUI comboText; // TextMeshPro
-    private int currentCombo;
+    private int _highScore;
+    private int _currentCombo;
+    private int _currentScore;
 
-    private int currentScore;
-
+    // Subscribe to GameStateManager events
+    private void OnEnable()
+    {
+        var gsm = GameStateManager.Instance;
+        if (gsm == null)    // If no manager, abort
+            return;
+        GameStateManager.Instance.OnGameOver += HideScorePanel;
+        GameStateManager.Instance.OnGameRestarted += ShowScorePanel;
+        GameStateManager.Instance.OnGameResumed += ShowScorePanel;
+    }
+    
+    // Unsubscribe
+    private void OnDisable()
+    {
+        var gsm = GameStateManager.Instance;
+        if (gsm == null) // Manager already gone, abort
+            return;
+        GameStateManager.Instance.OnGameOver -= HideScorePanel;
+        GameStateManager.Instance.OnGameRestarted -= ShowScorePanel;
+        GameStateManager.Instance.OnGameResumed -= ShowScorePanel;
+    }
+    
     private void Start()
     {
+        // Check if there's a high score
+        _highScore = HighScoreManager.Instance != null ? HighScoreManager.Instance.HighScore : 0;
+        DisplayHighScore();
         UpdateUI();
     }
 
@@ -29,36 +56,36 @@ public class ScoreManager : MonoBehaviour
         var basePoints = tilesMatched * pointsPerTile;
 
         // Apply combo multiplier
-        var multiplier = 1f + currentCombo * comboMultiplier;
+        var multiplier = 1f + _currentCombo * comboMultiplier;
         var earnedPoints = Mathf.RoundToInt(basePoints * multiplier);
 
-        currentScore += earnedPoints;
-        currentCombo++;
+        _currentScore += earnedPoints;
+        _currentCombo++;
 
         UpdateUI();
 
         // Optional: Log for debugging
-        Debug.Log($"Matched {tilesMatched} tiles | Combo x{currentCombo} | Earned {earnedPoints} points");
+        Debug.Log($"Matched {tilesMatched} tiles | Combo x{_currentCombo} | Earned {earnedPoints} points");
     }
 
     public void ResetCombo()
     {
-        if (currentCombo > 0) Debug.Log($"Combo ended at x{currentCombo}");
-        currentCombo = 0;
+        if (_currentCombo > 0) Debug.Log($"Combo ended at x{_currentCombo}");
+        _currentCombo = 0;
         UpdateUI();
     }
 
     private void UpdateUI()
     {
-        var scoreString = currentScore.ToString("D9");
-        var comboString = $"Combo x{currentCombo}";
+        var scoreString = _currentScore.ToString("D9");
+        var comboString = $"Combo x{_currentCombo}";
 
         // Update TextMeshPro if assigned
         if (scoreText != null) scoreText.text = scoreString;
 
         if (comboText != null)
         {
-            if (currentCombo > 1)
+            if (_currentCombo > 1)
             {
                 comboText.text = comboString;
                 comboText.gameObject.SetActive(true);
@@ -72,18 +99,33 @@ public class ScoreManager : MonoBehaviour
 
     public int GetScore()
     {
-        return currentScore;
+        return _currentScore;
     }
 
     public int GetCombo()
     {
-        return currentCombo;
+        return _currentCombo;
     }
 
     public void ResetScore()
     {
-        currentScore = 0;
-        currentCombo = 0;
+        _currentScore = 0;
+        _currentCombo = 0;
         UpdateUI();
+    }
+
+    void DisplayHighScore()
+    {
+        highScoreText.text = _highScore.ToString("D9");
+    }
+
+    private void ShowScorePanel()
+    {
+        scorePanel.SetActive(true);
+    }
+
+    private void HideScorePanel()
+    {
+        scorePanel.SetActive(false);
     }
 }

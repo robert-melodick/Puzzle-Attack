@@ -180,7 +180,7 @@ namespace PuzzleAttack.Grid
         private void MoveCursor(int dx, int dy)
         {
             // Use current cursorPosition instead of GridX/GridY
-            var newX = Mathf.Clamp(_cursorPosition.x + dx, 0, _gridWidth - 1);
+            var newX = Mathf.Clamp(_cursorPosition.x + dx, 0, _gridWidth - 2);
             var newY = Mathf.Clamp(_cursorPosition.y + dy, 0, _gridHeight - 1);
 
             Debug.Log(

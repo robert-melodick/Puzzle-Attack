@@ -1,26 +1,39 @@
 using System.Collections;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace PuzzleAttack.Grid
 {
     public class GridRiser : MonoBehaviour
     {
-        [Header("Rising Mechanics")] public float normalRiseSpeed = 0.5f; // Units per second
-        public float fastRiseSpeed = 2f; // Units per second when holding X
+        [FormerlySerializedAs("normalRiseSpeed")][Header("Rising Mechanics")]
+        public float baseRiseSpeed = 0.1f; // Base units per second at level 1
+        public float fastRiseMultiplier = 4f; // Multiplier when holding X
+        public int speedLevel = 1; // Current speed level of the grid, goes up as time goes on
+        public float speedLevelInterval = 60f; // Seconds between speed level increases
+        public int maxSpeedLevel = 99; // Maximum speed level
         public float gracePeriod = 2f; // Seconds before game over when block reaches top
 
-        [Header("Breathing Room")] public bool enableBreathingRoom = true; // Toggle breathing room feature
+        [Header("Breathing Room")] 
+        public bool enableBreathingRoom = true; // Toggle breathing room feature
         public float breathingRoomPerTile = 0.2f; // Seconds of breathing room per tile matched
         public float maxBreathingRoom = 5f; // Maximum breathing room duration
 
         [Header("Catch-up Mechanics")]
         public float catchUpMultiplier = 1.5f; // Speed multiplier when catching up from pauses (1.5 = 50% faster)
 
-        [SerializeField] private TextMeshProUGUI timeDebtText;
-        [SerializeField] private TextMeshProUGUI breathingRoomText;
-        [SerializeField] private TextMeshProUGUI gracePeriodText;
+        [SerializeField]
+        private TextMeshProUGUI timeDebtText;
+        [SerializeField]
+        private TextMeshProUGUI breathingRoomText;
+        [SerializeField]
+        private TextMeshProUGUI gracePeriodText;
+        [SerializeField]
+        private TextMeshProUGUI speedLevelText;
+        
         private float _breathingRoomTimer; // Time remaining before grid resumes rising
+        private float _speedLevelTimer; // Time until next speed level increase
 
         private CursorController _cursorController;
         private float _gracePeriodTimer = 1.5f;
@@ -94,12 +107,31 @@ namespace PuzzleAttack.Grid
 
             if (gracePeriodText != null)
                 gracePeriodText.text = IsInGracePeriod ? $"Grace Period: {_gracePeriodTimer:F2}s" : "Grace Period: N/A";
+
+            if (speedLevelText != null)
+                speedLevelText.text = speedLevel.ToString();
         }
 
         private IEnumerator RiseGrid()
         {
             while (!IsGameOver)
             {
+                // Update speed level timer - always ticks during gameplay (pauses automatically when game is paused via Time.timeScale)
+                _speedLevelTimer += Time.deltaTime;
+
+                // Debug log every 10 seconds to track progress
+                if (Mathf.FloorToInt(_speedLevelTimer) % 10 == 0 && Mathf.FloorToInt(_speedLevelTimer - Time.deltaTime) % 10 != 0)
+                {
+                    Debug.Log($"Speed level timer: {_speedLevelTimer:F1}s / {speedLevelInterval}s (Level {speedLevel})");
+                }
+
+                if (_speedLevelTimer >= speedLevelInterval && speedLevel < maxSpeedLevel)
+                {
+                    speedLevel++;
+                    _speedLevelTimer = 0f;
+                    Debug.Log($"Speed Level increased to {speedLevel}! Grid speed: {GetSpeedForLevel():F3} units/s");
+                }
+
                 // Handle breathing room countdown
                 if (_breathingRoomTimer > 0f)
                 {
@@ -145,11 +177,11 @@ namespace PuzzleAttack.Grid
                 }
                 else
                 {
-                    // Grid is rising - calculate speed with catch-up multiplier if we have debt
-                    var baseSpeed =
-                        Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L) || Input.GetKey(KeyCode.LeftShift)
-                            ? fastRiseSpeed
-                            : normalRiseSpeed;
+                    // Grid is rising - calculate speed based on current level
+                    var levelSpeed = GetSpeedForLevel();
+                    var baseSpeed = Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L) || Input.GetKey(KeyCode.LeftShift)
+                        ? levelSpeed * fastRiseMultiplier
+                        : levelSpeed;
 
                     // Apply catch-up multiplier if we have time debt
                     var speedMultiplier = _pausedTimeDebt > 0f ? catchUpMultiplier : 1.0f;
@@ -281,6 +313,39 @@ namespace PuzzleAttack.Grid
             {
                 GameStateManager.Instance.TriggerGameOver();
             }
+        }
+
+        /// <summary>
+        /// Calculates the grid rise speed based on the current speed level.
+        /// Uses an exponential curve from level 1 (slow, beginner-friendly) to level 99 (Tetris GM speed).
+        /// </summary>
+        private float GetSpeedForLevel()
+        {
+            if (speedLevel <= 1) return baseRiseSpeed;
+
+            // Exponential growth: 80x speed increase from level 1 to 99
+            // Level 1: baseRiseSpeed (0.1 units/s)
+            // Level 99: baseRiseSpeed * 80 (8 units/s)
+            float speedMultiplier = 80f;
+            float normalizedLevel = (speedLevel - 1) / (float)(maxSpeedLevel - 1);
+            float speedFactor = Mathf.Pow(speedMultiplier, normalizedLevel);
+
+            return baseRiseSpeed * speedFactor;
+        }
+
+        private void IncreaseSpeedLevel(int amount)
+        {
+            speedLevel+=amount;
+        }
+        
+        private void DecreaseSpeedLevel(int amount)
+        {
+            speedLevel-=amount;
+        }
+
+        private void SetSpeedLevel(int amount)
+        {
+            speedLevel = amount;
         }
     }
 }

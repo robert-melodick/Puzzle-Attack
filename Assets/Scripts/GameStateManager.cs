@@ -20,10 +20,14 @@ public class GameStateManager : MonoBehaviour
     [Header("Playtime Tracking")]
     [SerializeField] private TextMeshProUGUI playtimeText;
 
+    [Header("References")]
+    [SerializeField] private ScoreManager scoreManager;
+
     // Events for state changes (UI and other systems can subscribe)
     public event Action OnGamePaused;
     public event Action OnGameResumed;
     public event Action OnGameOver;
+    public event Action<bool> OnGameOverWithHighScore; // Passes true if new high score
     public event Action OnGameRestarted;
 
     // Playtime tracking
@@ -86,7 +90,6 @@ public class GameStateManager : MonoBehaviour
 
         currentState = GameState.Paused;
         Time.timeScale = 0f;
-
         OnGamePaused?.Invoke();
     }
 
@@ -106,7 +109,7 @@ public class GameStateManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Triggers game over state.
+    /// Triggers game over state and checks for high score.
     /// </summary>
     public void TriggerGameOver()
     {
@@ -116,8 +119,24 @@ public class GameStateManager : MonoBehaviour
         }
 
         currentState = GameState.GameOver;
+        
         Time.timeScale = 0f; // Stop the game
+
+        // Check and update high score
+        bool isNewHighScore = false;
+        if (HighScoreManager.Instance != null && scoreManager != null)
+        {
+            int finalScore = scoreManager.GetScore();
+            isNewHighScore = HighScoreManager.Instance.TrySetHighScore(finalScore);
+
+            if (isNewHighScore)
+            {
+                Debug.Log($"🎉 NEW HIGH SCORE: {finalScore}");
+            }
+        }
+
         OnGameOver?.Invoke();
+        OnGameOverWithHighScore?.Invoke(isNewHighScore);
     }
 
     /// <summary>
