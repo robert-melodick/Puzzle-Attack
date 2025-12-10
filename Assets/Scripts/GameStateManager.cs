@@ -127,11 +127,18 @@ public class GameStateManager : MonoBehaviour
         if (HighScoreManager.Instance != null && scoreManager != null)
         {
             int finalScore = scoreManager.GetScore();
-            isNewHighScore = HighScoreManager.Instance.TrySetHighScore(finalScore);
+            int highestCombo = scoreManager.GetHighestCombo();
+            int rank = HighScoreManager.Instance.AddScore(finalScore, highestCombo);
+
+            isNewHighScore = rank == 1;
 
             if (isNewHighScore)
             {
-                Debug.Log($"🎉 NEW HIGH SCORE: {finalScore}");
+                Debug.Log($"🎉 NEW HIGH SCORE: {finalScore} with combo x{highestCombo}!");
+            }
+            else if (rank > 0)
+            {
+                Debug.Log($"Score {finalScore} placed at rank #{rank} on the leaderboard!");
             }
         }
 

@@ -417,11 +417,35 @@ namespace PuzzleAttack.Grid
             var processedBlocks = new HashSet<GameObject>();
 
             var swapRowWorldY = row * _tileSize + _gridRiser.CurrentGridOffset;
-            var swapRowMidpoint = swapRowWorldY + _tileSize * 0.5f;
+            // Add a small buffer (10% of tile size) to prevent edge cases at exactly 50%
+            var thresholdBuffer = _tileSize * 0.1f;
+            var swapRowMidpoint = swapRowWorldY + _tileSize * 0.5f - thresholdBuffer;
 
             // First, check all falling blocks in this column
             Debug.Log($"[BlockSlip] ========== DETECTING FALLING BLOCKS in column {col}, swap row {row} ==========");
             Debug.Log($"[BlockSlip] Total dropping tiles in game: {_droppingTiles.Count}");
+
+            // Snapshot positions of all falling blocks before processing to prevent race conditions
+            Dictionary<GameObject, float> snapshotPositions = new Dictionary<GameObject, float>();
+            List<GameObject> blocksInColumn = new List<GameObject>();
+
+            foreach (var t in _droppingTiles)
+            {
+                if (t != null && t != swappingBlock)
+                {
+                    if (_droppingTargets.TryGetValue(t, out var target) && target.x == col)
+                    {
+                        snapshotPositions[t] = t.transform.position.y;
+                        blocksInColumn.Add(t);
+                    }
+                }
+            }
+
+            // Immediately freeze all falling blocks in this column to prevent movement during processing
+            foreach (var t in blocksInColumn)
+            {
+                _dropAnimationVersion[t] = GetVersion(t) + 1; // Cancel their current drop animation
+            }
 
             var fallingInColumn = 0;
             foreach (var t in _droppingTiles)
@@ -433,7 +457,8 @@ namespace PuzzleAttack.Grid
                 if (target.x != col) continue; // Different column, ignore
 
                 fallingInColumn++;
-                var tileWorldY = t.transform.position.y;
+                // Use snapshotted position for consistent threshold checks
+                var tileWorldY = snapshotPositions[t];
                 var currentGridY = Mathf.RoundToInt((tileWorldY - _gridRiser.CurrentGridOffset) / _tileSize);
 
                 Debug.Log(

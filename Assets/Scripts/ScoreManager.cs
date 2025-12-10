@@ -16,6 +16,7 @@ public class ScoreManager : MonoBehaviour
 
     private int _highScore;
     private int _currentCombo;
+    private int _highestCombo; // Track the highest combo reached this game
     private int _currentScore;
 
     // Subscribe to GameStateManager events
@@ -62,6 +63,12 @@ public class ScoreManager : MonoBehaviour
         _currentScore += earnedPoints;
         _currentCombo++;
 
+        // Track highest combo
+        if (_currentCombo > _highestCombo)
+        {
+            _highestCombo = _currentCombo;
+        }
+
         UpdateUI();
 
         // Optional: Log for debugging
@@ -107,10 +114,16 @@ public class ScoreManager : MonoBehaviour
         return _currentCombo;
     }
 
+    public int GetHighestCombo()
+    {
+        return _highestCombo;
+    }
+
     public void ResetScore()
     {
         _currentScore = 0;
         _currentCombo = 0;
+        _highestCombo = 0;
         UpdateUI();
     }
 
