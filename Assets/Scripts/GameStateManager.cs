@@ -128,13 +128,17 @@ public class GameStateManager : MonoBehaviour
         {
             int finalScore = scoreManager.GetScore();
             int highestCombo = scoreManager.GetHighestCombo();
-            int rank = HighScoreManager.Instance.AddScore(finalScore, highestCombo);
+            int speedLevel = scoreManager.GetSpeedLevel();
+
+            Debug.Log($"[GameStateManager] Saving score - Score: {finalScore}, Combo: {highestCombo}, Speed Level: {speedLevel}");
+
+            int rank = HighScoreManager.Instance.AddScore(finalScore, highestCombo, speedLevel);
 
             isNewHighScore = rank == 1;
 
             if (isNewHighScore)
             {
-                Debug.Log($"🎉 NEW HIGH SCORE: {finalScore} with combo x{highestCombo}!");
+                Debug.Log($"🎉 NEW HIGH SCORE: {finalScore} with combo x{highestCombo} at speed level {speedLevel}!");
             }
             else if (rank > 0)
             {

@@ -11,12 +11,14 @@ public class HighScoreEntry
 {
     public int score;
     public int highestCombo;
-    public string date; // Optional: track when the score was achieved
+    public int speedLevel;
+    public string date; // Track when the score was achieved
 
-    public HighScoreEntry(int score, int highestCombo)
+    public HighScoreEntry(int score, int highestCombo, int speedLevel)
     {
         this.score = score;
         this.highestCombo = highestCombo;
+        this.speedLevel = speedLevel;
         this.date = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
     }
 }
@@ -122,8 +124,9 @@ public class HighScoreManager : MonoBehaviour
     /// </summary>
     /// <param name="newScore">The score achieved</param>
     /// <param name="highestCombo">The highest combo achieved during that game</param>
+    /// <param name="speedLevel">The speed level reached during that game</param>
     /// <returns>The rank (1-based) if the score made it to the leaderboard, 0 otherwise</returns>
-    public int AddScore(int newScore, int highestCombo)
+    public int AddScore(int newScore, int highestCombo, int speedLevel)
     {
         // Check if this score qualifies for the leaderboard
         bool qualifies = _highScoreList.entries.Count < maxHighScores ||
@@ -136,7 +139,7 @@ public class HighScoreManager : MonoBehaviour
         }
 
         // Create new entry
-        var newEntry = new HighScoreEntry(newScore, highestCombo);
+        var newEntry = new HighScoreEntry(newScore, highestCombo, speedLevel);
         _highScoreList.entries.Add(newEntry);
 
         // Sort by score descending
@@ -156,11 +159,11 @@ public class HighScoreManager : MonoBehaviour
 
         if (rank == 1)
         {
-            Debug.Log($"NEW HIGH SCORE: {newScore} with combo x{highestCombo}!");
+            Debug.Log($"NEW HIGH SCORE: {newScore} with combo x{highestCombo} at speed level {speedLevel}!");
         }
         else
         {
-            Debug.Log($"New score added at rank #{rank}: {newScore} with combo x{highestCombo}");
+            Debug.Log($"New score added at rank #{rank}: {newScore} with combo x{highestCombo} at speed level {speedLevel}");
         }
 
         return rank;
@@ -173,7 +176,7 @@ public class HighScoreManager : MonoBehaviour
     /// <returns>True if a new high score was set, false otherwise</returns>
     public bool TrySetHighScore(int newScore)
     {
-        int rank = AddScore(newScore, 0);
+        int rank = AddScore(newScore, 0, 0);
         return rank == 1;
     }
 

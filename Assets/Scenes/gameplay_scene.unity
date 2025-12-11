@@ -1763,6 +1763,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 9025189355755826499, guid: c5b051a4ef655c74ebb58de40d3cafd3, type: 3}
+      propertyPath: highScoreKey
+      value: HighScoreData
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -1780,6 +1784,10 @@ PrefabInstance:
       propertyPath: comboText
       value: 
       objectReference: {fileID: 452944762}
+    - target: {fileID: 1001739911395833853, guid: 0274dbc2775897f44b1af2c280658b6b, type: 3}
+      propertyPath: gridRiser
+      value: 
+      objectReference: {fileID: 1080124449}
     - target: {fileID: 1001739911395833853, guid: 0274dbc2775897f44b1af2c280658b6b, type: 3}
       propertyPath: scoreText
       value: 

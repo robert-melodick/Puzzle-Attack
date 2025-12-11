@@ -9,10 +9,14 @@ public class ScoreManager : MonoBehaviour
     public int pointsPerTile = 10;
     public float comboMultiplier = 0.5f; // Each combo adds 50% more points
 
+    [Header("UI References")]
     public GameObject scorePanel;
     public TextMeshProUGUI highScoreText;
     public TextMeshProUGUI scoreText;
     public TextMeshProUGUI comboText;
+
+    [Header("Game References")]
+    public PuzzleAttack.Grid.GridRiser gridRiser; // Reference to get speed level
 
     private int _highScore;
     private int _currentCombo;
@@ -117,6 +121,19 @@ public class ScoreManager : MonoBehaviour
     public int GetHighestCombo()
     {
         return _highestCombo;
+    }
+
+    public int GetSpeedLevel()
+    {
+        if (gridRiser != null)
+        {
+            int level = gridRiser.speedLevel;
+            Debug.Log($"[ScoreManager] Getting speed level from GridRiser: {level}");
+            return level;
+        }
+
+        Debug.LogWarning("[ScoreManager] GridRiser reference is NULL! Returning default level 1. Please assign GridRiser in the Inspector.");
+        return 1; // Default to level 1 if no GridRiser reference
     }
 
     public void ResetScore()
