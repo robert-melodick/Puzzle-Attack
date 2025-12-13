@@ -194,6 +194,13 @@ namespace PuzzleAttack.Grid
             var rightX = cursorPos.x + 1;
             var y = cursorPos.y;
 
+            // Early rejection: check if any falling block is past the 50% threshold
+            if (IsBlockSlipTooLate(leftX, y) || IsBlockSlipTooLate(rightX, y))
+            {
+                Debug.Log(">>> BLOCKSLIP BLOCKED - falling tile past 50% threshold <<<");
+                return false;
+            }
+
             var leftTile = _grid[leftX, y];
             var rightTile = _grid[rightX, y];
 
@@ -233,6 +240,13 @@ namespace PuzzleAttack.Grid
             var leftX = cursorPos.x;
             var rightX = cursorPos.x + 1;
             var y = cursorPos.y;
+
+            // Early rejection: check if any falling block is past the 50% threshold
+            if (IsBlockSlipTooLate(leftX, y) || IsBlockSlipTooLate(rightX, y))
+            {
+                Debug.Log(">>> BLOCKSLIP BLOCKED - falling tile past 50% threshold <<<");
+                return false;
+            }
 
             var leftTile = _grid[leftX, y];
             var rightTile = _grid[rightX, y];
@@ -368,6 +382,54 @@ namespace PuzzleAttack.Grid
             }
 
             return fallingBlock != null;
+        }
+        
+        /// <summary>
+        /// Check if a BlockSlip would be "too late" - i.e., any falling block in the target column
+        /// has already passed the 50% threshold of the swap row.
+        /// Returns true if the swap should be BLOCKED.
+        /// </summary>
+        private bool IsBlockSlipTooLate(int columnX, int rowY)
+        {
+            if (_droppingTiles == null || _droppingTiles.Count == 0)
+                return false;
+
+            var offsetY = _gridRiser != null ? _gridRiser.CurrentGridOffset : 0f;
+            var swapRowWorldY = rowY * _tileSize + offsetY;
+            var thresholdBuffer = _tileSize * 0.1f; // Same buffer you use in HandleBlockSlip
+            var swapRowMidpoint = swapRowWorldY + _tileSize * 0.5f - thresholdBuffer;
+            var swapRowTop = swapRowWorldY + _tileSize;
+
+            foreach (var tile in _droppingTiles)
+            {
+                if (tile == null) continue;
+
+                if (!_droppingTargets.TryGetValue(tile, out var target))
+                    continue;
+
+                // Only check blocks in this column that will pass through our row
+                if (target.x != columnX)
+                    continue;
+
+                // Must be targeting at or below our swap row
+                if (target.y > rowY)
+                    continue;
+
+                var tileWorldY = tile.transform.position.y;
+
+                // Is this tile currently in the swap row and past midpoint?
+                if (tileWorldY >= swapRowWorldY && tileWorldY < swapRowTop)
+                {
+                    // Past midpoint = too late
+                    if (tileWorldY < swapRowMidpoint)
+                    {
+                        Debug.Log($"[BlockSlip] TOO LATE: Tile at Y:{tileWorldY:F2} is past midpoint {swapRowMidpoint:F2} of row {rowY}");
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
