@@ -329,6 +329,13 @@ namespace PuzzleAttack.Grid
                     // BlockSlip handled it
                     return;
 
+            // Check if any falling blocks in either column are past the 50% threshold
+            if (blockSlipManager.IsBlockSlipTooLate(leftX, y) || blockSlipManager.IsBlockSlipTooLate(rightX, y))
+            {
+                Debug.Log(">>> SWAP BLOCKED - falling block past 50% threshold <<<");
+                return;
+            }
+
             // Fallback: normal swap, but only if not dropping at cursor
             var leftDropping = leftTile != null && _droppingTiles.Contains(leftTile);
             var rightDropping = rightTile != null && _droppingTiles.Contains(rightTile);

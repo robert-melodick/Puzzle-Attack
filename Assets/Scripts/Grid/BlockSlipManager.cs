@@ -179,7 +179,16 @@ namespace PuzzleAttack.Grid
             }
 
             // Now animate the cascaded blocks upward (quick nudge)
-            foreach (var (tile, newPos) in fallingBlocksAbove) StartCoroutine(MoveTileCascadeQuickNudge(tile, newPos));
+            foreach (var (tile, newPos) in fallingBlocksAbove)
+            {
+                // Update Tile component to match new grid position before animation
+                var ts = tile.GetComponent<Tile>();
+                if (ts != null)
+                {
+                    ts.Initialize(newPos.x, newPos.y, ts.TileType, _gridManager);
+                }
+                StartCoroutine(MoveTileCascadeQuickNudge(tile, newPos));
+            }
 
             return true;
         }
@@ -389,7 +398,7 @@ namespace PuzzleAttack.Grid
         /// has already passed the 50% threshold of the swap row.
         /// Returns true if the swap should be BLOCKED.
         /// </summary>
-        private bool IsBlockSlipTooLate(int columnX, int rowY)
+        public bool IsBlockSlipTooLate(int columnX, int rowY)
         {
             if (_droppingTiles == null || _droppingTiles.Count == 0)
                 return false;
@@ -848,21 +857,46 @@ namespace PuzzleAttack.Grid
 
             if (sr != null) sr.sortingOrder = 10;
 
-            var startPos = tile.transform.position;
+            // Convert to grid coordinates
+            var startWorldPos = tile.transform.position;
+            var startGridX = (startWorldPos.x) / _tileSize;
+            var startGridY = (startWorldPos.y - _gridRiser.CurrentGridOffset) / _tileSize;
+            var targetGridY = (float)targetPos.y;
+
             var duration = _swapDuration;
             float elapsed = 0;
 
+            // Track previous offset to detect row spawns
+            var previousOffset = _gridRiser.CurrentGridOffset;
+
             while (elapsed < duration)
             {
-                var targetWorldPos = new Vector3(targetPos.x * _tileSize,
-                    targetPos.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
-                tile.transform.position = Vector3.Lerp(startPos, targetWorldPos, elapsed / duration);
+                // Detect row spawn (CurrentGridOffset decreases by ~_tileSize)
+                var currentOffset = _gridRiser.CurrentGridOffset;
+                if (currentOffset < previousOffset - (_tileSize * 0.1f))
+                {
+                    // Row spawned - shift grid coordinates up by 1
+                    startGridY += 1f;
+                    targetGridY += 1f;
+                    Debug.Log($"[Swap] Row spawned during animation, shifted Y coordinates up by 1");
+                }
+                previousOffset = currentOffset;
+
+                var progress = elapsed / duration;
+
+                // Lerp in grid coordinates, then convert to world
+                var currentGridX = Mathf.Lerp(startGridX, targetPos.x, progress);
+                var currentGridY = Mathf.Lerp(startGridY, targetGridY, progress);
+
+                var worldX = currentGridX * _tileSize;
+                var worldY = currentGridY * _tileSize + _gridRiser.CurrentGridOffset;
+
+                tile.transform.position = new Vector3(worldX, worldY, 0);
                 elapsed += Time.deltaTime;
                 yield return null;
             }
 
-            var finalPos = new Vector3(targetPos.x * _tileSize, targetPos.y * _tileSize + _gridRiser.CurrentGridOffset,
-                0);
+            var finalPos = new Vector3(targetPos.x * _tileSize, targetPos.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
             tile.transform.position = finalPos;
 
             if (ts != null) ts.FinishMovement();
@@ -887,20 +921,56 @@ namespace PuzzleAttack.Grid
 
             var ts = tile.GetComponent<Tile>();
 
+            // Convert to grid coordinates
             var startWorldPos = tile.transform.position;
-            var targetWorldPos =
-                new Vector3(toPos.x * _tileSize, toPos.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
-            var distance = Mathf.Abs(targetWorldPos.y - startWorldPos.y) / _tileSize;
+            var startGridY = (startWorldPos.y - _gridRiser.CurrentGridOffset) / _tileSize;
+            var currentTarget = toPos;
+            var targetGridY = (float)currentTarget.y;
+            var distance = Mathf.Abs(targetGridY - startGridY);
             var duration = _dropDuration * distance;
             float elapsed = 0;
+
+            // Track previous offset to detect row spawns
+            var previousOffset = _gridRiser.CurrentGridOffset;
 
             try
             {
                 while (elapsed < duration && tile != null)
                 {
-                    var calculatedWorldPos = new Vector3(toPos.x * _tileSize,
-                        toPos.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
-                    tile.transform.position = Vector3.Lerp(startWorldPos, calculatedWorldPos, elapsed / duration);
+                    // Detect row spawn (CurrentGridOffset decreases by ~_tileSize)
+                    var currentOffset = _gridRiser.CurrentGridOffset;
+                    if (currentOffset < previousOffset - (_tileSize * 0.5f))
+                    {
+                        // Row spawned - shift grid coordinates up by 1
+                        var oldTarget = currentTarget;
+                        startGridY += 1f;
+                        targetGridY += 1f;
+                        currentTarget = new Vector2Int(currentTarget.x, currentTarget.y + 1);
+
+                        // Update grid position
+                        if (_grid[oldTarget.x, oldTarget.y] == tile)
+                        {
+                            _grid[oldTarget.x, oldTarget.y] = null;
+                        }
+                        _grid[currentTarget.x, currentTarget.y] = tile;
+
+                        // Update tile component
+                        if (ts != null)
+                        {
+                            ts.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
+                        }
+
+                        Debug.Log($"[CascadeSmooth] Row spawned during animation, shifted target from Y:{oldTarget.y} to Y:{currentTarget.y}");
+                    }
+                    previousOffset = currentOffset;
+
+                    var progress = elapsed / duration;
+
+                    // Lerp in grid coordinates
+                    var currentGridY = Mathf.Lerp(startGridY, targetGridY, progress);
+                    var worldY = currentGridY * _tileSize + _gridRiser.CurrentGridOffset;
+
+                    tile.transform.position = new Vector3(currentTarget.x * _tileSize, worldY, 0);
                     elapsed += Time.deltaTime;
                     yield return null;
                 }
@@ -909,12 +979,12 @@ namespace PuzzleAttack.Grid
                 {
                     if (ts != null)
                     {
-                        ts.Initialize(toPos.x, toPos.y, ts.TileType, _gridManager);
+                        ts.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
                         ts.FinishMovement();
                     }
 
-                    tile.transform.position = new Vector3(toPos.x * _tileSize,
-                        toPos.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
+                    tile.transform.position = new Vector3(currentTarget.x * _tileSize,
+                        currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
                 }
             }
             finally
@@ -933,21 +1003,56 @@ namespace PuzzleAttack.Grid
 
             var ts = tile.GetComponent<Tile>();
 
+            // Convert to grid coordinates
             var startWorldPos = tile.transform.position;
-            var targetWorldPos =
-                new Vector3(toPos.x * _tileSize, toPos.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
-
-            var distance = Mathf.Abs(targetWorldPos.y - startWorldPos.y) / _tileSize;
+            var startGridY = (startWorldPos.y - _gridRiser.CurrentGridOffset) / _tileSize;
+            var currentTarget = toPos;
+            var targetGridY = (float)currentTarget.y;
+            var distance = Mathf.Abs(targetGridY - startGridY);
             var duration = _dropDuration * distance * 0.5f;
             float elapsed = 0;
+
+            // Track previous offset to detect row spawns
+            var previousOffset = _gridRiser.CurrentGridOffset;
 
             try
             {
                 while (elapsed < duration && tile != null)
                 {
-                    var calculatedWorldPos = new Vector3(toPos.x * _tileSize,
-                        toPos.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
-                    tile.transform.position = Vector3.Lerp(startWorldPos, calculatedWorldPos, elapsed / duration);
+                    // Detect row spawn (CurrentGridOffset decreases by ~_tileSize)
+                    var currentOffset = _gridRiser.CurrentGridOffset;
+                    if (currentOffset < previousOffset - (_tileSize * 0.5f))
+                    {
+                        // Row spawned - shift grid coordinates up by 1
+                        var oldTarget = currentTarget;
+                        startGridY += 1f;
+                        targetGridY += 1f;
+                        currentTarget = new Vector2Int(currentTarget.x, currentTarget.y + 1);
+
+                        // Update grid position
+                        if (_grid[oldTarget.x, oldTarget.y] == tile)
+                        {
+                            _grid[oldTarget.x, oldTarget.y] = null;
+                        }
+                        _grid[currentTarget.x, currentTarget.y] = tile;
+
+                        // Update tile component
+                        if (ts != null)
+                        {
+                            ts.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
+                        }
+
+                        Debug.Log($"[CascadeQuickNudge] Row spawned during animation, shifted target from Y:{oldTarget.y} to Y:{currentTarget.y}");
+                    }
+                    previousOffset = currentOffset;
+
+                    var progress = elapsed / duration;
+
+                    // Lerp in grid coordinates
+                    var currentGridY = Mathf.Lerp(startGridY, targetGridY, progress);
+                    var worldY = currentGridY * _tileSize + _gridRiser.CurrentGridOffset;
+
+                    tile.transform.position = new Vector3(currentTarget.x * _tileSize, worldY, 0);
                     elapsed += Time.deltaTime;
                     yield return null;
                 }
@@ -956,12 +1061,12 @@ namespace PuzzleAttack.Grid
                 {
                     if (ts != null)
                     {
-                        ts.Initialize(toPos.x, toPos.y, ts.TileType, _gridManager);
+                        ts.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
                         ts.FinishMovement();
                     }
 
-                    tile.transform.position = new Vector3(toPos.x * _tileSize,
-                        toPos.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
+                    tile.transform.position = new Vector3(currentTarget.x * _tileSize,
+                        currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
                 }
             }
             finally
@@ -990,18 +1095,54 @@ namespace PuzzleAttack.Grid
             var originalSortingOrder = sr != null ? sr.sortingOrder : 0;
             if (sr != null) sr.sortingOrder = 10;
 
-            var startWorldPos = fromWorldPos;
+            // Convert start position to grid coordinates (relative to grid, not world)
+            var startGridOffset = _gridRiser.CurrentGridOffset;
+            var startGridY = (fromWorldPos.y - startGridOffset) / _tileSize;
+            var startGridX = fromWorldPos.x / _tileSize;
+
             var currentTarget = toPos;
 
-            var targetY = currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset;
-            var distance = Mathf.Abs(startWorldPos.y - targetY) / _tileSize;
+            var targetGridY = currentTarget.y;
+            var distance = Mathf.Abs(startGridY - targetGridY);
             var duration = _dropDuration * distance;
             float elapsed = 0;
+
+            // Track previous offset to detect row spawns
+            var previousOffset = _gridRiser.CurrentGridOffset;
 
             try
             {
                 while (elapsed < duration && tile != null && _droppingTiles.Contains(tile))
                 {
+                    // Detect row spawn (CurrentGridOffset decreases by ~_tileSize)
+                    var currentOffset = _gridRiser.CurrentGridOffset;
+                    if (currentOffset < previousOffset - (_tileSize * 0.5f))
+                    {
+                        // Row spawned - shift grid coordinates up by 1
+                        var oldTarget = currentTarget;
+                        startGridY += 1f;
+                        targetGridY += 1;
+                        currentTarget = new Vector2Int(currentTarget.x, currentTarget.y + 1);
+
+                        // Update grid position
+                        if (_grid[oldTarget.x, oldTarget.y] == tile)
+                        {
+                            _grid[oldTarget.x, oldTarget.y] = null;
+                        }
+                        _grid[currentTarget.x, currentTarget.y] = tile;
+                        _droppingTargets[tile] = currentTarget;
+
+                        // Update tile component to match new grid position
+                        if (newTile != null)
+                        {
+                            newTile.Initialize(currentTarget.x, currentTarget.y, newTile.TileType, _gridManager);
+                            newTile.StartFalling(currentTarget);
+                        }
+
+                        Debug.Log($"[Drop] Row spawned during animation, shifted target from Y:{oldTarget.y} to Y:{currentTarget.y}");
+                    }
+                    previousOffset = currentOffset;
+
                     if (checkForObstructions)
                     {
                         var currentWorldY = tile.transform.position.y;
@@ -1032,12 +1173,12 @@ namespace PuzzleAttack.Grid
                                     _droppingTargets[tile] = currentTarget;
                                     _retargetedDrops.Add(tile);
 
-                                    var currentPos = tile.transform.position;
-                                    var newTargetY = currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset;
-                                    var remainingDistance = Mathf.Abs(currentPos.y - newTargetY) / _tileSize;
+                                    // Recalculate in grid coordinates for retargeting
+                                    var retargetGridY = (tile.transform.position.y - _gridRiser.CurrentGridOffset) / _tileSize;
+                                    var remainingDistance = Mathf.Abs(retargetGridY - currentTarget.y);
 
-                                    startWorldPos = currentPos;
-                                    targetY = newTargetY;
+                                    startGridY = retargetGridY;
+                                    targetGridY = currentTarget.y;
                                     duration = _dropDuration * remainingDistance;
                                     elapsed = 0;
 
@@ -1051,9 +1192,12 @@ namespace PuzzleAttack.Grid
                     var progress = duration > 0 ? elapsed / duration : 1f;
                     _droppingProgress[tile] = progress;
 
-                    var targetWorldPos = new Vector3(currentTarget.x * _tileSize,
-                        currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
-                    tile.transform.position = Vector3.Lerp(startWorldPos, targetWorldPos, progress);
+                    // Lerp in GRID coordinates, then convert to world coordinates using current offset
+                    // This ensures the tile falls correctly relative to the grid even as it rises
+                    var currentGridY = Mathf.Lerp(startGridY, targetGridY, progress);
+                    var worldY = currentGridY * _tileSize + _gridRiser.CurrentGridOffset;
+
+                    tile.transform.position = new Vector3(currentTarget.x * _tileSize, worldY, 0);
                     elapsed += Time.deltaTime;
                     yield return null;
                 }
@@ -1077,21 +1221,43 @@ namespace PuzzleAttack.Grid
             }
             finally
             {
-                if (tile != null &&
-                    _dropAnimationVersion.TryGetValue(tile, out var latestVersion) &&
-                    latestVersion == myVersion)
+                if (tile != null)
                 {
-                    _droppingTiles.Remove(tile);
+                    var latestVersion = _dropAnimationVersion.TryGetValue(tile, out var v) ? v : 0;
 
-                    var ts = tile.GetComponent<Tile>();
-                    if (ts != null)
-                        ts.FinishMovement();
+                    // Only clean up if this was the most recent animation
+                    // (checking latestVersion <= myVersion handles both completed and cancelled-without-replacement cases)
+                    if (latestVersion <= myVersion)
+                    {
+                        // Clean up tracking sets so GridRiser can update the tile's position
+                        _droppingTiles.Remove(tile);
+                        _droppingProgress.Remove(tile);
+                        _droppingTargets.Remove(tile);
+                        _retargetedDrops.Remove(tile);
 
-                    _droppingProgress.Remove(tile);
-                    _droppingTargets.Remove(tile);
-                    _dropAnimationVersion.Remove(tile);
-                    _retargetedDrops.Remove(tile);
-                    if (sr != null) sr.sortingOrder = originalSortingOrder;
+                        // Only update tile state if animation completed normally (not cancelled)
+                        if (latestVersion == myVersion)
+                        {
+                            var ts = tile.GetComponent<Tile>();
+                            if (ts != null)
+                                ts.FinishMovement();
+
+                            _dropAnimationVersion.Remove(tile);
+                            if (sr != null) sr.sortingOrder = originalSortingOrder;
+                        }
+                        else
+                        {
+                            // Animation was cancelled and no new animation started
+                            // Just restore sorting order
+                            if (sr != null) sr.sortingOrder = originalSortingOrder;
+                            Debug.Log($"[Drop] Animation cancelled for {tile.name} (v{myVersion}), cleaned up tracking (latest v{latestVersion})");
+                        }
+                    }
+                    else
+                    {
+                        // A newer animation has started - don't touch tracking sets
+                        Debug.Log($"[Drop] Animation ended for {tile.name} (v{myVersion}) but newer animation exists (v{latestVersion}), skipping cleanup");
+                    }
                 }
             }
         }
