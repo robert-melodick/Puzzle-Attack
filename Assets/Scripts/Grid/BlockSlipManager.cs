@@ -861,7 +861,8 @@ namespace PuzzleAttack.Grid
             var startWorldPos = tile.transform.position;
             var startGridX = (startWorldPos.x) / _tileSize;
             var startGridY = (startWorldPos.y - _gridRiser.CurrentGridOffset) / _tileSize;
-            var targetGridY = (float)targetPos.y;
+            var currentTarget = targetPos;
+            var targetGridY = (float)currentTarget.y;
 
             var duration = _swapDuration;
             float elapsed = 0;
@@ -878,14 +879,22 @@ namespace PuzzleAttack.Grid
                     // Row spawned - shift grid coordinates up by 1
                     startGridY += 1f;
                     targetGridY += 1f;
-                    Debug.Log($"[Swap] Row spawned during animation, shifted Y coordinates up by 1");
+                    currentTarget = new Vector2Int(currentTarget.x, currentTarget.y + 1);
+
+                    // Update tile component
+                    if (ts != null)
+                    {
+                        ts.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
+                    }
+
+                    Debug.Log($"[Swap] Row spawned during animation, shifted target from Y:{targetPos.y} to Y:{currentTarget.y}");
                 }
                 previousOffset = currentOffset;
 
                 var progress = elapsed / duration;
 
                 // Lerp in grid coordinates, then convert to world
-                var currentGridX = Mathf.Lerp(startGridX, targetPos.x, progress);
+                var currentGridX = Mathf.Lerp(startGridX, currentTarget.x, progress);
                 var currentGridY = Mathf.Lerp(startGridY, targetGridY, progress);
 
                 var worldX = currentGridX * _tileSize;
@@ -896,7 +905,7 @@ namespace PuzzleAttack.Grid
                 yield return null;
             }
 
-            var finalPos = new Vector3(targetPos.x * _tileSize, targetPos.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
+            var finalPos = new Vector3(currentTarget.x * _tileSize, currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
             tile.transform.position = finalPos;
 
             if (ts != null) ts.FinishMovement();

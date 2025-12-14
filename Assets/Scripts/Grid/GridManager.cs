@@ -33,6 +33,16 @@ namespace PuzzleAttack.Grid
                                 break; // Stop searching - nothing above can drop past this
                             }
 
+                            // Check if this block is being processed for matches (in stasis)
+                            if (matchProcessor.IsTileBeingProcessed(x, aboveY))
+                            {
+                                // This tile is being processed (match animation, etc.)
+                                // It's in stasis and shouldn't fall yet. Nothing above can drop past it.
+                                Debug.Log(
+                                    $"[DropTiles] Found tile being processed at ({x}, {aboveY}), stopping search (protecting match stasis)");
+                                break; // Stop searching - protect tiles in match processing
+                            }
+
                             var dropDistance = aboveY - y;
                             maxDropDistance = Mathf.Max(maxDropDistance, dropDistance);
                             drops.Add((tile, new Vector2Int(x, aboveY), new Vector2Int(x, y)));
