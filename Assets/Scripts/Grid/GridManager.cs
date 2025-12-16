@@ -155,7 +155,7 @@ namespace PuzzleAttack.Grid
         }
 
         /// <summary>
-        ///     Finds the grid position of a given tile GameObject
+        /// Finds the grid position of a given tile GameObject
         /// </summary>
         public Vector2Int? FindTilePosition(GameObject tile)
         {
@@ -172,6 +172,14 @@ namespace PuzzleAttack.Grid
         public void AddBreathingRoom(int tilesMatched)
         {
             gridRiser.AddBreathingRoom(tilesMatched);
+        }
+        
+        /// <summary>
+        /// Get the grid array (for debug tools and external systems)
+        /// </summary>
+        public GameObject[,] GetGrid()
+        {
+            return _grid;
         }
 
         #endregion
