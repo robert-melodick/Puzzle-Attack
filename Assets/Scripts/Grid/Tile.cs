@@ -39,16 +39,25 @@ namespace PuzzleAttack.Grid
         // Convenience property
         public bool IsBusy => State != MovementState.Idle;
 
+        // Status Effect properties
+        public StatusEffect CurrentEffect { get; private set; }
+        public bool HasStatusEffect => CurrentEffect != null;
+
         #endregion
 
         #region Private Fields
 
         private GridManager _gridManager;
 
-        [Header("Sound Effects")] public AudioClip landSound;
+        [Header("Sound Effects")] 
+        public AudioClip landSound;
         public AudioClip matchSound;
 
         private AudioSource _audioSource;
+
+        // Status effect tracking
+        private float _effectTimer;
+        private GameObject _currentEffectVisual;
 
         #endregion
 
@@ -102,7 +111,8 @@ namespace PuzzleAttack.Grid
 
         public void PlayLandSound()
         {
-            if (landSound != null && _audioSource != null) _audioSource.PlayOneShot(landSound);
+            if (landSound != null && _audioSource != null) 
+                _audioSource.PlayOneShot(landSound);
         }
 
         public void PlayMatchSound(int combo = 1)
@@ -117,5 +127,7 @@ namespace PuzzleAttack.Grid
         }
 
         #endregion
+
+        
     }
 }

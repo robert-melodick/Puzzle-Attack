@@ -181,7 +181,9 @@ namespace PuzzleAttack.Grid
         {
             return _grid;
         }
-
+        
+        
+        
         #endregion
 
         #region Unity Lifecycle & Initialization
@@ -375,7 +377,7 @@ namespace PuzzleAttack.Grid
 
             var leftTile = _grid[leftX, y];
             var rightTile = _grid[rightX, y];
-
+            
             // Mark tiles as swapping BEFORE updating grid array to prevent race conditions
             if (leftTile != null) _swappingTiles.Add(leftTile);
             if (rightTile != null) _swappingTiles.Add(rightTile);

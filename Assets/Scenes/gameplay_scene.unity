@@ -769,7 +769,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4303983558665489757, guid: 92c87de583e747e44b917db5ba86d110, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8236822945619674190, guid: 92c87de583e747e44b917db5ba86d110, type: 3}
       propertyPath: debugText
@@ -1575,6 +1575,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 5017638309990735421, guid: 76f91e8228e2f4a428a3edd411a8d37e, type: 3}
+      propertyPath: uiPanelToggleKey
+      value: 283
+      objectReference: {fileID: 0}
     - target: {fileID: 5220429082288613251, guid: 76f91e8228e2f4a428a3edd411a8d37e, type: 3}
       propertyPath: m_Name
       value: DebugManager

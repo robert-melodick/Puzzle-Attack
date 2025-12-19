@@ -318,7 +318,7 @@ namespace PuzzleAttack.RuntimeDebug
         #region Utility Commands
 
         [DebugCommand("help", "List all available commands")]
-        public void Help()
+        private void Help()
         {
             // List all commands
             var commandList = new System.Text.StringBuilder();

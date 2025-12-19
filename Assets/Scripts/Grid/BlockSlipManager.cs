@@ -2,11 +2,6 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Handles Block Slip behavior and all tile movement animations (swap, drop, cascades)
-/// so GridManager can focus on grid state and match logic.
-/// </summary>
-
 namespace PuzzleAttack.Grid
 {
     public class BlockSlipManager : MonoBehaviour
