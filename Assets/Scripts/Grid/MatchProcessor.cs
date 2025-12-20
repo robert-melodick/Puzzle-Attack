@@ -4,40 +4,60 @@ using UnityEngine;
 
 namespace PuzzleAttack.Grid
 {
+    /// <summary>
+    /// Processes matches: blink animation, scoring, popping, and cascade handling.
+    /// Notifies adjacent tiles (for status effect curing and garbage conversion).
+    /// </summary>
     public class MatchProcessor : MonoBehaviour
     {
-        [Header("Match Processing")] public float processMatchDuration = 1.5f;
+        #region Inspector Fields
+
+        [Header("Match Processing")]
+        public float processMatchDuration = 1.5f;
         public float blinkSpeed = 0.15f;
         public float delayBetweenPops = 1.5f;
 
         public ScoreManager scoreManager;
         public bool isProcessingMatches;
 
-        private GameObject[,] _grid;
+        #endregion
+
+        #region Private Fields
+
         private GridManager _gridManager;
+        private GameObject[,] _grid;
         private MatchDetector _matchDetector;
         private readonly HashSet<Vector2Int> _processingTiles = new();
 
+        #endregion
+
+        #region Properties
+
         public bool IsProcessingMatches => isProcessingMatches;
+
+        #endregion
+
+        #region Initialization
 
         public void Initialize(GridManager manager, GameObject[,] grid, MatchDetector matchDetector)
         {
             _gridManager = manager;
-            this._grid = grid;
-            this._matchDetector = matchDetector;
+            _grid = grid;
+            _matchDetector = matchDetector;
         }
+
+        #endregion
+
+        #region Public API
 
         public bool IsTileBeingProcessed(int x, int y)
         {
             return _processingTiles.Contains(new Vector2Int(x, y));
         }
 
-        public void AddBreathingRoom(int tilesMatched)
-        {
-            // Delegate to GridRiser through GridManager if needed
-            // This will be called from GridManager's GridRiser component
-        }
-
+        /// <summary>
+        /// Check entire grid for matches and process them.
+        /// </summary>
         public IEnumerator CheckAndClearMatches()
         {
             isProcessingMatches = true;
@@ -45,135 +65,124 @@ namespace PuzzleAttack.Grid
 
             while (matchGroups.Count > 0)
             {
-                // Flatten all groups to mark tiles as processing
-                foreach (var group in matchGroups)
-                foreach (var tile in group)
-                    if (tile != null)
-                    {
-                        var tileScript = tile.GetComponent<Tile>();
-                        _processingTiles.Add(new Vector2Int(tileScript.GridX, tileScript.GridY));
-                    }
-
-                // Flatten for blinking
-                var allMatchedTiles = new List<GameObject>();
-                foreach (var group in matchGroups) allMatchedTiles.AddRange(group);
-
-                yield return StartCoroutine(BlinkTiles(allMatchedTiles, processMatchDuration));
-
-                // Get the current combo
-                var currentCombo = scoreManager != null ? scoreManager.GetCombo() : 0;
-
-                // Count total tiles across all groups for this match
-                var totalTiles = 0;
-                foreach (var group in matchGroups) totalTiles += group.Count;
-
-                // Add score once for all tiles matched from this action
-                if (scoreManager != null) scoreManager.AddScore(totalTiles);
-
-                // Add breathing room only for combos (not the first match)
-                if (currentCombo > 0)
-                {
-                    _gridManager.AddBreathingRoom(totalTiles);
-                }
-
-                // All groups from this match use the same combo number
-                var comboNumber = currentCombo + 1;
-
-                // Pop each group asynchronously with the same combo
-                var popCoroutines = new List<Coroutine>();
-                foreach (var group in matchGroups)
-                    popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboNumber)));
-
-                // Wait for all groups to finish popping
-                foreach (var coroutine in popCoroutines) yield return coroutine;
-
-                yield return new WaitForSeconds(0.1f);
-
-                // Clear processing tiles now that matched tiles are destroyed
-                // This allows falling blocks to not be incorrectly marked as "processed"
-                _processingTiles.Clear();
-
-                // Drop tiles to fill the gaps
-                yield return StartCoroutine(_gridManager.DropTiles());
-
+                yield return StartCoroutine(ProcessMatchGroups(matchGroups));
                 matchGroups = _matchDetector.GetMatchGroups();
             }
 
-            if (scoreManager != null) scoreManager.ResetCombo();
-
+            scoreManager?.ResetCombo();
             isProcessingMatches = false;
         }
 
+        /// <summary>
+        /// Process a specific list of matched tiles.
+        /// </summary>
         public IEnumerator ProcessMatches(List<GameObject> matches)
         {
             if (matches.Count == 0) yield break;
 
             isProcessingMatches = true;
-
-            // Group the matches into separate connected groups
             var matchGroups = _matchDetector.GroupMatchedTiles(matches);
 
-            // Mark all tiles as processing
-            foreach (var group in matchGroups)
-            foreach (var tile in group)
-                if (tile != null)
-                {
-                    var tileScript = tile.GetComponent<Tile>();
-                    _processingTiles.Add(new Vector2Int(tileScript.GridX, tileScript.GridY));
-                }
+            yield return StartCoroutine(ProcessMatchGroups(matchGroups));
 
-            yield return StartCoroutine(BlinkTiles(matches, processMatchDuration));
-
-            // Get the current combo
-            var currentCombo = scoreManager != null ? scoreManager.GetCombo() : 0;
-
-            // Count total tiles across all groups for this match
-            var totalTiles = 0;
-            foreach (var group in matchGroups) totalTiles += group.Count;
-
-            // Add score once for all tiles matched from this action
-            if (scoreManager != null) scoreManager.AddScore(totalTiles);
-
-            // Add breathing room only for combos (not the first match)
-            if (currentCombo > 0)
+            // Check for cascade matches
+            var cascadeGroups = _matchDetector.GetMatchGroups();
+            if (cascadeGroups.Count > 0)
             {
-                _gridManager.AddBreathingRoom(totalTiles);
-            }
-
-            // All groups from this match use the same combo number
-            var comboNumber = currentCombo + 1;
-
-            // Pop each group asynchronously with the same combo
-            var popCoroutines = new List<Coroutine>();
-            foreach (var group in matchGroups)
-                popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboNumber)));
-
-            // Wait for all groups to finish popping
-            foreach (var coroutine in popCoroutines) yield return coroutine;
-
-            yield return new WaitForSeconds(0.1f);
-
-            // Clear processing tiles now that matched tiles are destroyed
-            // This allows falling blocks to not be incorrectly marked as "processed"
-            _processingTiles.Clear();
-
-            // Drop tiles to fill the gaps
-            yield return StartCoroutine(_gridManager.DropTiles());
-
-            var cascadeMatchGroups = _matchDetector.GetMatchGroups();
-            if (cascadeMatchGroups.Count > 0)
-            {
-                // Flatten and recurse
                 var cascadeMatches = new List<GameObject>();
-                foreach (var group in cascadeMatchGroups) cascadeMatches.AddRange(group);
+                foreach (var group in cascadeGroups)
+                    cascadeMatches.AddRange(group);
 
                 yield return StartCoroutine(ProcessMatches(cascadeMatches));
             }
             else
             {
-                if (scoreManager != null) scoreManager.ResetCombo();
-
+                scoreManager?.ResetCombo();
                 isProcessingMatches = false;
+            }
+        }
+
+        #endregion
+
+        #region Match Processing
+
+        private IEnumerator ProcessMatchGroups(List<List<GameObject>> matchGroups)
+        {
+            // Mark all tiles as processing
+            foreach (var group in matchGroups)
+            foreach (var tile in group)
+            {
+                if (tile == null) continue;
+                var ts = tile.GetComponent<Tile>();
+                _processingTiles.Add(new Vector2Int(ts.GridX, ts.GridY));
+            }
+
+            // Collect all tiles for blinking
+            var allMatchedTiles = new List<GameObject>();
+            foreach (var group in matchGroups)
+                allMatchedTiles.AddRange(group);
+
+            // Notify adjacent tiles before processing (for status effect curing)
+            NotifyAdjacentTiles(allMatchedTiles);
+
+            yield return StartCoroutine(BlinkTiles(allMatchedTiles, processMatchDuration));
+
+            // Scoring
+            var currentCombo = scoreManager?.GetCombo() ?? 0;
+            var totalTiles = 0;
+            foreach (var group in matchGroups)
+                totalTiles += group.Count;
+
+            scoreManager?.AddScore(totalTiles);
+
+            // Breathing room for combos (not first match)
+            if (currentCombo > 0)
+                _gridManager.AddBreathingRoom(totalTiles);
+
+            var comboNumber = currentCombo + 1;
+
+            // Pop each group
+            var popCoroutines = new List<Coroutine>();
+            foreach (var group in matchGroups)
+                popCoroutines.Add(StartCoroutine(PopTilesInSequence(group, comboNumber)));
+
+            foreach (var coroutine in popCoroutines)
+                yield return coroutine;
+
+            yield return new WaitForSeconds(0.1f);
+
+            _processingTiles.Clear();
+
+            yield return StartCoroutine(_gridManager.DropTiles());
+        }
+
+        /// <summary>
+        /// Notify tiles adjacent to matched tiles (for curing burning status, converting garbage).
+        /// </summary>
+        private void NotifyAdjacentTiles(List<GameObject> matchedTiles)
+        {
+            var notifiedPositions = new HashSet<Vector2Int>();
+
+            foreach (var matchedTile in matchedTiles)
+            {
+                if (matchedTile == null) continue;
+                var ts = matchedTile.GetComponent<Tile>();
+                if (ts == null) continue;
+
+                var adjacentTiles = _matchDetector.GetAdjacentTiles(ts.GridX, ts.GridY);
+                foreach (var adjacent in adjacentTiles)
+                {
+                    if (adjacent == null || matchedTiles.Contains(adjacent)) continue;
+
+                    var adjTs = adjacent.GetComponent<Tile>();
+                    if (adjTs == null) continue;
+
+                    var pos = new Vector2Int(adjTs.GridX, adjTs.GridY);
+                    if (notifiedPositions.Contains(pos)) continue;
+
+                    adjTs.OnAdjacentMatch();
+                    notifiedPositions.Add(pos);
+                }
             }
         }
 
@@ -184,11 +193,11 @@ namespace PuzzleAttack.Grid
 
             var spriteRenderers = new List<SpriteRenderer>();
             foreach (var tile in tiles)
-                if (tile != null)
-                {
-                    var sr = tile.GetComponent<SpriteRenderer>();
-                    if (sr != null) spriteRenderers.Add(sr);
-                }
+            {
+                if (tile == null) continue;
+                var sr = tile.GetComponent<SpriteRenderer>();
+                if (sr != null) spriteRenderers.Add(sr);
+            }
 
             while (elapsed < duration)
             {
@@ -209,28 +218,27 @@ namespace PuzzleAttack.Grid
         private IEnumerator PopTilesInSequence(List<GameObject> tiles, int combo)
         {
             foreach (var tile in tiles)
-                if (tile != null)
-                {
-                    var tileScript = tile.GetComponent<Tile>();
-                    if (tileScript != null)
-                    {
-                        // Play match sound for this tile
-                        tileScript.PlayMatchSound(combo);
+            {
+                if (tile == null) continue;
 
-                        // Remove from grid (but don't destroy yet, so sound can play)
-                        _grid[tileScript.GridX, tileScript.GridY] = null;
+                var ts = tile.GetComponent<Tile>();
+                if (ts == null) continue;
 
-                        // Hide the tile visually
-                        var sr = tile.GetComponent<SpriteRenderer>();
-                        if (sr != null) sr.enabled = false;
+                ts.PlayMatchSound(combo);
 
-                        // Wait before next tile (this gives time for sound to play)
-                        yield return new WaitForSeconds(delayBetweenPops);
+                // Remove from grid
+                _grid[ts.GridX, ts.GridY] = null;
 
-                        // Now destroy the tile
-                        Destroy(tile);
-                    }
-                }
+                // Hide visually
+                var sr = tile.GetComponent<SpriteRenderer>();
+                if (sr != null) sr.enabled = false;
+
+                yield return new WaitForSeconds(delayBetweenPops);
+
+                Destroy(tile);
+            }
         }
+
+        #endregion
     }
 }

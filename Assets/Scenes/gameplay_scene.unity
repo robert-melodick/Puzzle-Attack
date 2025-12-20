@@ -181,7 +181,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5621434329977911287, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
       propertyPath: orthographic size
-      value: 4.3125
+      value: 8.5
       objectReference: {fileID: 0}
     - target: {fileID: 5621434329977911287, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
       propertyPath: m_NormalizedViewPortRect.x
@@ -189,15 +189,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5621434329977911287, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
       propertyPath: m_NormalizedViewPortRect.y
-      value: 0
+      value: 0.0018281536
       objectReference: {fileID: 0}
     - target: {fileID: 5621434329977911287, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
       propertyPath: m_NormalizedViewPortRect.width
-      value: 1
+      value: 0.99999994
       objectReference: {fileID: 0}
     - target: {fileID: 5621434329977911287, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
       propertyPath: m_NormalizedViewPortRect.height
-      value: 1
+      value: 0.99451554
       objectReference: {fileID: 0}
     - target: {fileID: 7007122242791172411, guid: aaf08490f970d8345a188d85f639ce3e, type: 3}
       propertyPath: m_Name
@@ -1433,12 +1433,32 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 1110068567226200326, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: garbagePrefab
+      value: 
+      objectReference: {fileID: 2825724620208511161, guid: 447c46250572faa47a217c5ba51289b9, type: 3}
+    - target: {fileID: 1110068567226200326, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: garbageSprite
+      value: 
+      objectReference: {fileID: 6991333013806848629, guid: 7ba195f157f07ff4c89cc51b4d1bec99, type: 3}
     - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: timeDebtText
       value: 
       objectReference: {fileID: 801717907}
     - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: _timeDebtText
+      value: 
+      objectReference: {fileID: 801717907}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: baseRiseSpeed
+      value: 0.2
+      objectReference: {fileID: 0}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: speedLevelText
+      value: 
+      objectReference: {fileID: 7858156894009111039}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: _speedLevelText
       value: 
       objectReference: {fileID: 7858156894009111039}
     - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
@@ -1446,7 +1466,15 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1265609409}
     - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: _gracePeriodText
+      value: 
+      objectReference: {fileID: 1265609409}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: breathingRoomText
+      value: 
+      objectReference: {fileID: 1931472083}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: _breathingRoomText
       value: 
       objectReference: {fileID: 1931472083}
     - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
@@ -1454,11 +1482,23 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 709405816}
     - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: fastRiseMultiplier
+      value: 4
+      objectReference: {fileID: 0}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: speedLevelInterval
       value: 45
       objectReference: {fileID: 0}
     - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: _breathingRoomImage
+      value: 
+      objectReference: {fileID: 709405816}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: breathingRoomFlashText
+      value: 
+      objectReference: {fileID: 2048021895}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: _breathingRoomFlashText
       value: 
       objectReference: {fileID: 2048021895}
     - target: {fileID: 5347899561248015888, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
@@ -1816,7 +1856,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7083190943020289958, guid: 6dbcbac6ddbf0b94bb2f96317290fc49, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: -34
+      value: -34.000122
       objectReference: {fileID: 0}
     - target: {fileID: 7083190943020289958, guid: 6dbcbac6ddbf0b94bb2f96317290fc49, type: 3}
       propertyPath: m_AnchoredPosition.y

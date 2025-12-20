@@ -4,107 +4,29 @@ using UnityEngine;
 
 namespace PuzzleAttack.Grid
 {
+    /// <summary>
+    /// Central grid coordinator. Manages tile array, swap requests, and drop logic.
+    /// Delegates animation to TileAnimator and movement logic to BlockSlipManager.
+    /// </summary>
     public class GridManager : MonoBehaviour
     {
-        #region Drop Logic
-
-        public IEnumerator DropTiles()
-        {
-            List<(GameObject tile, Vector2Int from, Vector2Int to)> drops = new();
-            var maxDropDistance = 0;
-
-            // Collect all drops first
-            for (var x = 0; x < gridWidth; x++)
-            for (var y = 0; y < gridHeight; y++)
-                if (_grid[x, y] == null)
-                    for (var aboveY = y + 1; aboveY < gridHeight; aboveY++)
-                        if (_grid[x, aboveY] != null)
-                        {
-                            var tile = _grid[x, aboveY];
-
-                            // Check if this block is already dropping (e.g., retargeted by blockslip)
-                            if (_droppingTiles.Contains(tile))
-                            {
-                                // This tile is already dropping and will land somewhere
-                                // We can't determine where it will land, and any block above it
-                                // can't drop past it anyway, so stop searching this column
-                                Debug.Log(
-                                    $"[DropTiles] Found already-dropping tile at ({x}, {aboveY}), stopping search (can't drop blocks above a dropping block)");
-                                break; // Stop searching - nothing above can drop past this
-                            }
-
-                            // Check if this block is being processed for matches (in stasis)
-                            if (matchProcessor.IsTileBeingProcessed(x, aboveY))
-                            {
-                                // This tile is being processed (match animation, etc.)
-                                // It's in stasis and shouldn't fall yet. Nothing above can drop past it.
-                                Debug.Log(
-                                    $"[DropTiles] Found tile being processed at ({x}, {aboveY}), stopping search (protecting match stasis)");
-                                break; // Stop searching - protect tiles in match processing
-                            }
-
-                            var dropDistance = aboveY - y;
-                            maxDropDistance = Mathf.Max(maxDropDistance, dropDistance);
-                            drops.Add((tile, new Vector2Int(x, aboveY), new Vector2Int(x, y)));
-
-                            // Update grid array
-                            _grid[x, y] = tile;
-                            _grid[x, aboveY] = null;
-                            break;
-                        }
-
-            // Check for conflicts before starting animations
-            var targetMap = new Dictionary<Vector2Int, GameObject>();
-            foreach (var (tile, from, to) in drops)
-            {
-                if (targetMap.ContainsKey(to))
-                    Debug.LogError(
-                        $"[DropTiles] CONFLICT: Both {targetMap[to].name} and {tile.name} want to drop to ({to.x}, {to.y})!");
-
-                targetMap[to] = tile;
-            }
-
-            Debug.Log($"[DropTiles] Collected {drops.Count} drops, max distance: {maxDropDistance}");
-
-            // Update coordinates and start animations
-            foreach (var (tile, from, to) in drops)
-                if (tile != null)
-                {
-                    var tileScript = tile.GetComponent<Tile>();
-                    tileScript.Initialize(to.x, to.y, tileScript.TileType, this);
-
-                    // Let BlockSlipManager handle animation + tracking
-                    blockSlipManager.BeginDrop(tile, from, to);
-                }
-
-            // Wait for the longest drop to complete (plus a small buffer)
-            if (drops.Count > 0)
-            {
-                var waitTime = dropDuration * maxDropDistance + 0.05f;
-                Debug.Log($"[DropTiles] Waiting {waitTime:F2}s for drops to complete");
-                yield return new WaitForSeconds(waitTime);
-            }
-
-            Debug.Log("[DropTiles] ========== DROP CHECK COMPLETE ==========");
-        }
-
-        #endregion
-
         #region Inspector Fields
 
-        [Header("Grid Settings")] public int gridWidth = 6;
+        [Header("Grid Settings")]
+        public int gridWidth = 6;
         public int gridHeight = 14;
         public float tileSize = 1f;
 
-        [Header("Grid Initialization")] public int initialFillRows = 4; // How many rows to preload at start
+        [Header("Initialization")]
+        public int initialFillRows = 4;
+        public int preloadRows = 2;
 
-        public int preloadRows = 2; // Extra rows preloaded below visible grid
+        [Header("Timing")]
+        public float swapDuration = 0.15f;
+        public float dropDuration = 0.15f;
 
-        [Header("Swap Settings")] public float swapDuration = 0.15f; // Time in seconds for swap animation
-
-        [Header("Drop Settings")] public float dropDuration = 0.15f; // Time in seconds PER TILE UNIT (gravity speed)
-
-        [Header("Components")] public CursorController cursorController;
+        [Header("Components")]
+        public CursorController cursorController;
         public GridRiser gridRiser;
         public MatchDetector matchDetector;
         public MatchProcessor matchProcessor;
@@ -115,48 +37,116 @@ namespace PuzzleAttack.Grid
 
         #region Internal State
 
-        private GameObject[,] _grid; // Main grid of tiles
-        private GameObject[,] _preloadGrid; // Extra rows below main grid
-
-        // Animated Tile Tracking
-        private readonly HashSet<GameObject> _swappingTiles = new(); // Tiles currently being swapped
-        private readonly HashSet<GameObject> _droppingTiles = new(); // Tiles currently dropping
+        private GameObject[,] _grid;
+        private GameObject[,] _preloadGrid;
+        private readonly HashSet<GameObject> _swappingTiles = new();
+        private readonly HashSet<GameObject> _droppingTiles = new();
 
         #endregion
 
-        #region Public Properties / Queries
+        #region Properties
 
         public bool IsSwapping { get; private set; }
+        public GameObject[,] Grid => _grid;
+        public int Width => gridWidth;
+        public int Height => gridHeight;
+        public float TileSize => tileSize;
 
-        public bool IsTileSwapping(GameObject tile)
+        #endregion
+
+        #region Unity Lifecycle
+
+        private void Start()
         {
-            return _swappingTiles.Contains(tile);
+            InitializeGridArrays();
+            InitializeComponents();
+            tileSpawner.CreateBackgroundTiles();
+            StartCoroutine(InitializeGrid());
         }
 
-        public bool IsTileDropping(GameObject tile)
+        private void Update()
         {
-            return _droppingTiles.Contains(tile);
+            if (gridRiser.IsGameOver) return;
+            if (GameStateManager.Instance != null && GameStateManager.Instance.IsPaused) return;
+
+            CleanupNullTiles();
+            blockSlipManager.CleanupTracking();
+            cursorController.HandleInput();
+            HandleSwapInput();
+            gridRiser.DisplayDebugInfo();
         }
 
-        public bool IsTileAnimating(GameObject tile)
+        #endregion
+
+        #region Initialization
+
+        private void InitializeGridArrays()
         {
-            return _swappingTiles.Contains(tile) || _droppingTiles.Contains(tile);
+            _grid = new GameObject[gridWidth, gridHeight];
+            _preloadGrid = new GameObject[gridWidth, preloadRows];
         }
 
-        public void SetIsSwapping(bool value)
+        private void InitializeComponents()
         {
-            IsSwapping = value;
+            tileSpawner.Initialize(this, tileSize, _grid, _preloadGrid, gridWidth, gridHeight, preloadRows);
+            cursorController.Initialize(this, tileSize, gridWidth, gridHeight, tileSpawner, gridRiser);
+            matchDetector.Initialize(_grid, gridWidth, gridHeight);
+            matchProcessor.Initialize(this, _grid, matchDetector);
+            gridRiser.Initialize(this, _grid, _preloadGrid, tileSpawner, cursorController, 
+                matchDetector, matchProcessor, tileSize, gridWidth, gridHeight);
+
+            blockSlipManager.Initialize(this, _grid, gridWidth, gridHeight, tileSize,
+                swapDuration, dropDuration, gridRiser, matchDetector, matchProcessor,
+                cursorController, _swappingTiles, _droppingTiles);
         }
 
-        // Called by CursorController.Swap()
+        private IEnumerator InitializeGrid()
+        {
+            // Fill preload rows
+            for (var y = 0; y < preloadRows; y++)
+            for (var x = 0; x < gridWidth; x++)
+            {
+                tileSpawner.SpawnPreloadTile(x, y, gridRiser.CurrentGridOffset);
+                yield return new WaitForSeconds(0.01f);
+            }
+
+            // Fill initial rows
+            for (var y = 0; y < initialFillRows; y++)
+            for (var x = 0; x < gridWidth; x++)
+            {
+                tileSpawner.SpawnTile(x, y, gridRiser.CurrentGridOffset);
+                yield return new WaitForSeconds(0.02f);
+            }
+
+            yield return StartCoroutine(matchProcessor.CheckAndClearMatches());
+            gridRiser.StartRising();
+        }
+
+        private void CleanupNullTiles()
+        {
+            _swappingTiles.RemoveWhere(t => t == null);
+            _droppingTiles.RemoveWhere(t => t == null);
+        }
+
+        #endregion
+
+        #region Public API
+
+        public void SetIsSwapping(bool value) => IsSwapping = value;
+
         public void RequestSwapAtCursor()
         {
             if (!IsSwapping) StartCoroutine(SwapCursorTiles());
         }
 
-        /// <summary>
-        /// Finds the grid position of a given tile GameObject
-        /// </summary>
+        public bool IsTileSwapping(GameObject tile) => _swappingTiles.Contains(tile);
+        public bool IsTileDropping(GameObject tile) => _droppingTiles.Contains(tile);
+        public bool IsTileAnimating(GameObject tile) => _swappingTiles.Contains(tile) || _droppingTiles.Contains(tile);
+
+        public void AddBreathingRoom(int tilesMatched) => gridRiser.AddBreathingRoom(tilesMatched);
+
+        public GameObject[,] GetGrid() => _grid;
+
         public Vector2Int? FindTilePosition(GameObject tile)
         {
             if (tile == null) return null;
@@ -169,108 +159,18 @@ namespace PuzzleAttack.Grid
             return null;
         }
 
-        public void AddBreathingRoom(int tilesMatched)
-        {
-            gridRiser.AddBreathingRoom(tilesMatched);
-        }
-        
         /// <summary>
-        /// Get the grid array (for debug tools and external systems)
+        /// Check if a tile at position can be swapped (considering status effects).
         /// </summary>
-        public GameObject[,] GetGrid()
+        public bool CanTileSwap(int x, int y)
         {
-            return _grid;
-        }
-        
-        
-        
-        #endregion
-
-        #region Unity Lifecycle & Initialization
-
-        private void Start()
-        {
-            _grid = new GameObject[gridWidth, gridHeight];
-            _preloadGrid = new GameObject[gridWidth, preloadRows];
-
-            // Initialize all components
-            tileSpawner.Initialize(this, tileSize, _grid, _preloadGrid, gridWidth, gridHeight, preloadRows);
-            cursorController.Initialize(this, tileSize, gridWidth, gridHeight, tileSpawner, gridRiser);
-            matchDetector.Initialize(_grid, gridWidth, gridHeight);
-            matchProcessor.Initialize(this, _grid, matchDetector);
-            gridRiser.Initialize(this, _grid, _preloadGrid, tileSpawner, cursorController, matchDetector, matchProcessor,
-                tileSize, gridWidth, gridHeight);
-
-            // Initialize BlockSlipManager
-            blockSlipManager.Initialize(
-                this,
-                _grid,
-                gridWidth,
-                gridHeight,
-                tileSize,
-                swapDuration,
-                dropDuration,
-                gridRiser,
-                matchDetector,
-                matchProcessor,
-                cursorController,
-                _swappingTiles,
-                _droppingTiles
-            );
-
-            // Create background and initialize grid
-            tileSpawner.CreateBackgroundTiles();
-            StartCoroutine(InitializeGrid());
-        }
-
-        private IEnumerator InitializeGrid()
-        {
-            // Fill preload rows (below visible grid)
-            for (var y = 0; y < preloadRows; y++)
-            for (var x = 0; x < gridWidth; x++)
-            {
-                tileSpawner.SpawnPreloadTile(x, y, gridRiser.CurrentGridOffset);
-                yield return new WaitForSeconds(0.01f);
-            }
-
-            // Fill bottom rows of main grid
-            for (var y = 0; y < initialFillRows; y++)
-            for (var x = 0; x < gridWidth; x++)
-            {
-                tileSpawner.SpawnTile(x, y, gridRiser.CurrentGridOffset);
-                yield return new WaitForSeconds(0.02f);
-            }
-
-            // Check for initial matches
-            yield return StartCoroutine(matchProcessor.CheckAndClearMatches());
-
-            // Start rising
-            gridRiser.StartRising();
-        }
-
-        private void Update()
-        {
-            if (gridRiser.IsGameOver) return;
-
-            // Don't process input when game is paused (Time.timeScale handles animation pausing)
-            if (GameStateManager.Instance != null && GameStateManager.Instance.IsPaused)
-                return;
-
-            // Clean up only destroyed (null) tiles from animation sets
-            _swappingTiles.RemoveWhere(tile => tile == null);
-            _droppingTiles.RemoveWhere(tile => tile == null);
-
-            // Clean up Block Slip tracking dictionaries inside BlockSlipManager
-            blockSlipManager.CleanupTracking();
-
-            // Handle cursor input
-            cursorController.HandleInput();
-
-            // Optional debug indicator
-            // blockSlipManager.UpdateBlockSlipIndicator();
-
-            HandleSwapInput();
-            gridRiser.DisplayDebugInfo();
+            var tile = _grid[x, y];
+            if (tile == null) return true; // Empty space can always "swap"
+            
+            var tileScript = tile.GetComponent<Tile>();
+            if (tileScript == null) return true;
+            
+            return tileScript.CanSwap();
         }
 
         #endregion
@@ -281,7 +181,6 @@ namespace PuzzleAttack.Grid
         {
             if (IsSwapping) return;
 
-            // Swap with Z (primary), K (alternate), or Space
             if (!(Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Space)))
                 return;
 
@@ -293,70 +192,66 @@ namespace PuzzleAttack.Grid
             var leftTile = _grid[leftX, y];
             var rightTile = _grid[rightX, y];
 
-            var leftTileScript = leftTile != null ? leftTile.GetComponent<Tile>() : null;
-            var rightTileScript = rightTile != null ? rightTile.GetComponent<Tile>() : null;
+            // Status effect check
+            if (!CanTileSwap(leftX, y) || !CanTileSwap(rightX, y))
+            {
+                Debug.Log(">>> SWAP BLOCKED - tile status prevents swap <<<");
+                return;
+            }
 
-            var leftFalling = leftTileScript != null && leftTileScript.State == Tile.MovementState.Falling;
-            var rightFalling = rightTileScript != null && rightTileScript.State == Tile.MovementState.Falling;
+            var leftScript = leftTile?.GetComponent<Tile>();
+            var rightScript = rightTile?.GetComponent<Tile>();
 
-            var leftIdle = leftTileScript == null || leftTileScript.State == Tile.MovementState.Idle;
-            var rightIdle = rightTileScript == null || rightTileScript.State == Tile.MovementState.Idle;
+            var leftFalling = leftScript != null && leftScript.IsFalling;
+            var rightFalling = rightScript != null && rightScript.IsFalling;
+            var leftIdle = leftScript == null || leftScript.IsIdle;
+            var rightIdle = rightScript == null || rightScript.IsIdle;
 
-            // Check if tiles are being processed (matched)
-            var leftProcessed = matchProcessor.IsTileBeingProcessed(leftX, y);
-            var rightProcessed = matchProcessor.IsTileBeingProcessed(rightX, y);
-
-            if (leftProcessed || rightProcessed)
+            // Match processing check
+            if (matchProcessor.IsTileBeingProcessed(leftX, y) || matchProcessor.IsTileBeingProcessed(rightX, y))
             {
                 Debug.Log(">>> SWAP BLOCKED - tiles being processed <<<");
                 return;
             }
 
-            // Check if tiles are currently swapping
-            var leftSwapping = leftTile != null && _swappingTiles.Contains(leftTile);
-            var rightSwapping = rightTile != null && _swappingTiles.Contains(rightTile);
-
-            if (leftSwapping || rightSwapping)
+            // Swapping check
+            if ((leftTile != null && _swappingTiles.Contains(leftTile)) || 
+                (rightTile != null && _swappingTiles.Contains(rightTile)))
             {
                 Debug.Log(">>> SWAP BLOCKED - tiles swapping <<<");
                 return;
             }
 
-            // Check if tiles are active (above visibility threshold)
-            var leftActive = leftTile == null || tileSpawner.IsTileActive(leftTile, gridRiser.CurrentGridOffset);
-            var rightActive = rightTile == null || tileSpawner.IsTileActive(rightTile, gridRiser.CurrentGridOffset);
-
-            if (!leftActive || !rightActive)
+            // Active check
+            if (!IsTileActive(leftTile) || !IsTileActive(rightTile))
             {
                 Debug.Log(">>> SWAP BLOCKED - tiles not yet active <<<");
                 return;
             }
 
-            // Case 1: exactly one tile falling at cursor -> this MUST be a BlockSlip kick-under
+            // Case 1: One tile falling at cursor -> BlockSlip kick-under
             if (leftFalling ^ rightFalling)
             {
                 if (blockSlipManager.TryKickUnderFallingAtCursor(cursorPos))
-                    // BlockSlip handled it; no normal swap
                     return;
 
                 Debug.Log(">>> SWAP BLOCKED - one tile falling, BlockSlip not available <<<");
                 return;
             }
 
-            // Case 2: both tiles idle (or null) -> try "falling higher up" BlockSlip first
+            // Case 2: Both idle -> check for falling blocks higher up
             if (leftIdle && rightIdle)
                 if (blockSlipManager.TryHandleBlockSlipAtCursor(cursorPos))
-                    // BlockSlip handled it
                     return;
 
-            // Check if any falling blocks in either column are past the 50% threshold
+            // 50% threshold check
             if (blockSlipManager.IsBlockSlipTooLate(leftX, y) || blockSlipManager.IsBlockSlipTooLate(rightX, y))
             {
                 Debug.Log(">>> SWAP BLOCKED - falling block past 50% threshold <<<");
                 return;
             }
 
-            // Fallback: normal swap, but only if not dropping at cursor
+            // Normal swap (only if not dropping at cursor)
             var leftDropping = leftTile != null && _droppingTiles.Contains(leftTile);
             var rightDropping = rightTile != null && _droppingTiles.Contains(rightTile);
 
@@ -364,6 +259,11 @@ namespace PuzzleAttack.Grid
                 StartCoroutine(SwapCursorTiles());
             else
                 Debug.Log(">>> SWAP BLOCKED - tiles dropping at cursor <<<");
+        }
+
+        private bool IsTileActive(GameObject tile)
+        {
+            return tile == null || tileSpawner.IsTileActive(tile, gridRiser.CurrentGridOffset);
         }
 
         private IEnumerator SwapCursorTiles()
@@ -377,63 +277,46 @@ namespace PuzzleAttack.Grid
 
             var leftTile = _grid[leftX, y];
             var rightTile = _grid[rightX, y];
-            
-            // Mark tiles as swapping BEFORE updating grid array to prevent race conditions
+
+            // Mark as swapping before grid update
             if (leftTile != null) _swappingTiles.Add(leftTile);
             if (rightTile != null) _swappingTiles.Add(rightTile);
 
-            // Update grid array after protection is applied
+            // Update grid array
             _grid[leftX, y] = rightTile;
             _grid[rightX, y] = leftTile;
 
             try
             {
-                // Start swap animations WITHOUT updating grid coordinates yet
+                // Start animations
                 if (leftTile != null) blockSlipManager.StartSwapAnimation(leftTile, new Vector2Int(rightX, y));
-
                 if (rightTile != null) blockSlipManager.StartSwapAnimation(rightTile, new Vector2Int(leftX, y));
 
                 yield return new WaitForSeconds(swapDuration);
 
-                // NOW update grid coordinates after animation completes
-                var leftPos = FindTilePosition(leftTile);
-                var rightPos = FindTilePosition(rightTile);
+                // Update coordinates after animation
+                FinalizeSwappedTile(leftTile);
+                FinalizeSwappedTile(rightTile);
 
-                if (leftTile != null && leftPos.HasValue)
-                {
-                    var tile = leftTile.GetComponent<Tile>();
-                    tile.Initialize(leftPos.Value.x, leftPos.Value.y, tile.TileType, this);
-                    leftTile.transform.position =
-                        new Vector3(leftPos.Value.x * tileSize,
-                            leftPos.Value.y * tileSize + gridRiser.CurrentGridOffset, 0);
-                }
-
-                if (rightTile != null && rightPos.HasValue)
-                {
-                    var tile = rightTile.GetComponent<Tile>();
-                    tile.Initialize(rightPos.Value.x, rightPos.Value.y, tile.TileType, this);
-                    rightTile.transform.position =
-                        new Vector3(rightPos.Value.x * tileSize,
-                            rightPos.Value.y * tileSize + gridRiser.CurrentGridOffset, 0);
-                }
-
-                // Swap animation is complete
                 IsSwapping = false;
 
-                // Check if swap placed blocks in path of falling blocks and handle mid-air interception
-                var midAirInterceptHandled = false;
+                // Check for momentum (frozen tiles continue moving)
+                HandlePostSwapMomentum(leftTile, rightTile);
+
+                // Mid-air interception check
+                var leftPos = FindTilePosition(leftTile);
+                var rightPos = FindTilePosition(rightTile);
+                var midAirHandled = false;
+                
                 if (leftPos.HasValue && rightPos.HasValue)
-                    midAirInterceptHandled = blockSlipManager.HandleMidAirSwapInterception(
-                        leftTile, rightTile, leftPos.Value, rightPos.Value);
+                    midAirHandled = blockSlipManager.HandleMidAirSwapInterception(leftTile, rightTile, leftPos.Value, rightPos.Value);
 
-                // If mid-air intercept was handled, wait for cascade animation
-                if (midAirInterceptHandled)
-                    yield return new WaitForSeconds(dropDuration * 0.5f); // Wait for quick nudge cascade
+                if (midAirHandled)
+                    yield return new WaitForSeconds(dropDuration * 0.5f);
 
-                // Drop any tiles that can fall after swap
                 yield return StartCoroutine(DropTiles());
 
-                // Check entire grid for matches since tiles may have dropped far from original position
+                // Check for matches
                 var matches = matchDetector.GetAllMatches();
                 if (matches.Count > 0 && !matchProcessor.IsProcessingMatches)
                     StartCoroutine(matchProcessor.ProcessMatches(matches));
@@ -444,6 +327,164 @@ namespace PuzzleAttack.Grid
                 _swappingTiles.Remove(rightTile);
                 IsSwapping = false;
             }
+        }
+
+        private void FinalizeSwappedTile(GameObject tileObj)
+        {
+            if (tileObj == null) return;
+            
+            var pos = FindTilePosition(tileObj);
+            if (!pos.HasValue) return;
+
+            var tile = tileObj.GetComponent<Tile>();
+            tile.Initialize(pos.Value.x, pos.Value.y, tile.TileType, this);
+            tileObj.transform.position = new Vector3(
+                pos.Value.x * tileSize,
+                pos.Value.y * tileSize + gridRiser.CurrentGridOffset, 
+                0);
+        }
+
+        /// <summary>
+        /// Handles momentum for frozen tiles that continue moving after swap.
+        /// </summary>
+        private void HandlePostSwapMomentum(GameObject leftTile, GameObject rightTile)
+        {
+            CheckTileMomentum(leftTile, 1);  // Left tile moved right
+            CheckTileMomentum(rightTile, -1); // Right tile moved left
+        }
+
+        private void CheckTileMomentum(GameObject tileObj, int direction)
+        {
+            if (tileObj == null) return;
+            
+            var tile = tileObj.GetComponent<Tile>();
+            if (tile == null || !tile.HasMomentum()) return;
+
+            // Frozen tile continues moving in same direction until blocked
+            StartCoroutine(ContinueMomentum(tileObj, direction));
+        }
+
+        private IEnumerator ContinueMomentum(GameObject tileObj, int direction)
+        {
+            while (tileObj != null)
+            {
+                var tile = tileObj.GetComponent<Tile>();
+                if (tile == null || !tile.HasMomentum()) yield break;
+
+                var pos = FindTilePosition(tileObj);
+                if (!pos.HasValue) yield break;
+
+                var nextX = pos.Value.x + direction;
+                
+                // Check bounds
+                if (nextX < 0 || nextX >= gridWidth) yield break;
+                
+                // Check if next position is blocked
+                if (_grid[nextX, pos.Value.y] != null) yield break;
+
+                // Move to next position
+                _grid[pos.Value.x, pos.Value.y] = null;
+                _grid[nextX, pos.Value.y] = tileObj;
+                
+                _swappingTiles.Add(tileObj);
+                blockSlipManager.StartSwapAnimation(tileObj, new Vector2Int(nextX, pos.Value.y));
+                
+                yield return new WaitForSeconds(swapDuration);
+                
+                tile.Initialize(nextX, pos.Value.y, tile.TileType, this);
+                _swappingTiles.Remove(tileObj);
+            }
+        }
+
+        #endregion
+
+        #region Drop Logic
+
+        public IEnumerator DropTiles()
+        {
+            var drops = CollectDrops();
+            if (drops.Count == 0) yield break;
+
+            ValidateDropTargets(drops);
+            var maxDropDistance = ExecuteDrops(drops);
+
+            if (drops.Count > 0)
+            {
+                var waitTime = dropDuration * maxDropDistance + 0.05f;
+                Debug.Log($"[DropTiles] Waiting {waitTime:F2}s for {drops.Count} drops");
+                yield return new WaitForSeconds(waitTime);
+            }
+
+            Debug.Log("[DropTiles] Complete");
+        }
+
+        private List<(GameObject tile, Vector2Int from, Vector2Int to)> CollectDrops()
+        {
+            var drops = new List<(GameObject tile, Vector2Int from, Vector2Int to)>();
+
+            for (var x = 0; x < gridWidth; x++)
+            for (var y = 0; y < gridHeight; y++)
+            {
+                if (_grid[x, y] != null) continue;
+
+                for (var aboveY = y + 1; aboveY < gridHeight; aboveY++)
+                {
+                    if (_grid[x, aboveY] == null) continue;
+
+                    var tile = _grid[x, aboveY];
+
+                    // Skip already dropping tiles
+                    if (_droppingTiles.Contains(tile))
+                    {
+                        Debug.Log($"[DropTiles] Tile at ({x}, {aboveY}) already dropping, stopping column search");
+                        break;
+                    }
+
+                    // Skip tiles being processed
+                    if (matchProcessor.IsTileBeingProcessed(x, aboveY))
+                    {
+                        Debug.Log($"[DropTiles] Tile at ({x}, {aboveY}) being processed, stopping column search");
+                        break;
+                    }
+
+                    drops.Add((tile, new Vector2Int(x, aboveY), new Vector2Int(x, y)));
+                    _grid[x, y] = tile;
+                    _grid[x, aboveY] = null;
+                    break;
+                }
+            }
+
+            return drops;
+        }
+
+        private void ValidateDropTargets(List<(GameObject tile, Vector2Int from, Vector2Int to)> drops)
+        {
+            var targetMap = new Dictionary<Vector2Int, GameObject>();
+            foreach (var (tile, from, to) in drops)
+            {
+                if (targetMap.ContainsKey(to))
+                    Debug.LogError($"[DropTiles] CONFLICT: Multiple tiles targeting ({to.x}, {to.y})!");
+                targetMap[to] = tile;
+            }
+        }
+
+        private int ExecuteDrops(List<(GameObject tile, Vector2Int from, Vector2Int to)> drops)
+        {
+            var maxDistance = 0;
+
+            foreach (var (tileObj, from, to) in drops)
+            {
+                if (tileObj == null) continue;
+
+                var distance = from.y - to.y;
+                maxDistance = Mathf.Max(maxDistance, distance);
+
+                var tile = tileObj.GetComponent<Tile>();
+                tile.Initialize(to.x, to.y, tile.TileType, this);
+                blockSlipManager.BeginDrop(tileObj, from, to);
+            }
+
+            return maxDistance;
         }
 
         #endregion

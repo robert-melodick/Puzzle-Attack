@@ -4,47 +4,45 @@ using UnityEngine;
 
 namespace PuzzleAttack.Grid
 {
+    /// <summary>
+    /// Handles BlockSlip mechanics, swap animations, and drop animations.
+    /// Manages tile movement during swaps and falls including mid-air interception.
+    /// </summary>
     public class BlockSlipManager : MonoBehaviour
     {
-        private CursorController _cursorController;
-        private readonly Dictionary<GameObject, int> _dropAnimationVersion = new();
-        private float _dropDuration;
+        #region Private Fields
 
-        // Block Slip tracking
-        private readonly Dictionary<GameObject, float> _droppingProgress = new();
-        private readonly Dictionary<GameObject, Vector2Int> _droppingTargets = new();
-        private HashSet<GameObject> _droppingTiles;
-
-        // Grid info
-        private GameObject[,] _grid;
-
-        private int _gridHeight;
-
-        // Core references
         private GridManager _gridManager;
+        private GameObject[,] _grid;
         private GridRiser _gridRiser;
-        private int _gridWidth;
         private MatchDetector _matchDetector;
         private MatchProcessor _matchProcessor;
+        private CursorController _cursorController;
+
+        private HashSet<GameObject> _swappingTiles;
+        private HashSet<GameObject> _droppingTiles;
+
+        private int _gridWidth;
+        private int _gridHeight;
+        private float _tileSize;
+        private float _swapDuration;
+        private float _dropDuration;
+
+        // Drop tracking
+        private readonly Dictionary<GameObject, int> _dropAnimVersions = new();
+        private readonly Dictionary<GameObject, float> _dropProgress = new();
+        private readonly Dictionary<GameObject, Vector2Int> _dropTargets = new();
         private readonly HashSet<GameObject> _retargetedDrops = new();
 
-        // Timings
-        private float _swapDuration;
+        #endregion
 
-        // Shared animation sets (owned by GridManager, but we operate on them)
-        private HashSet<GameObject> _swappingTiles;
-        private float _tileSize;
-
-        #region Initialization / Maintenance
+        #region Initialization
 
         public void Initialize(
             GridManager gridManager,
             GameObject[,] grid,
-            int gridWidth,
-            int gridHeight,
-            float tileSize,
-            float swapDuration,
-            float dropDuration,
+            int gridWidth, int gridHeight, float tileSize,
+            float swapDuration, float dropDuration,
             GridRiser gridRiser,
             MatchDetector matchDetector,
             MatchProcessor matchProcessor,
@@ -52,36 +50,33 @@ namespace PuzzleAttack.Grid
             HashSet<GameObject> swappingTiles,
             HashSet<GameObject> droppingTiles)
         {
-            this._gridManager = gridManager;
-            this._grid = grid;
-            this._gridWidth = gridWidth;
-            this._gridHeight = gridHeight;
-            this._tileSize = tileSize;
-            this._swapDuration = swapDuration;
-            this._dropDuration = dropDuration;
-            this._gridRiser = gridRiser;
-            this._matchDetector = matchDetector;
-            this._matchProcessor = matchProcessor;
-            this._cursorController = cursorController;
-            this._swappingTiles = swappingTiles;
-            this._droppingTiles = droppingTiles;
+            _gridManager = gridManager;
+            _grid = grid;
+            _gridWidth = gridWidth;
+            _gridHeight = gridHeight;
+            _tileSize = tileSize;
+            _swapDuration = swapDuration;
+            _dropDuration = dropDuration;
+            _gridRiser = gridRiser;
+            _matchDetector = matchDetector;
+            _matchProcessor = matchProcessor;
+            _cursorController = cursorController;
+            _swappingTiles = swappingTiles;
+            _droppingTiles = droppingTiles;
         }
 
-        /// <summary>
-        ///     Cleanup null entries in Block Slip tracking (call from GridManager.Update)
-        /// </summary>
         public void CleanupTracking()
         {
             var keysToRemove = new List<GameObject>();
-            foreach (var key in _droppingProgress.Keys)
+            foreach (var key in _dropProgress.Keys)
                 if (key == null)
                     keysToRemove.Add(key);
 
             foreach (var key in keysToRemove)
             {
-                _droppingProgress.Remove(key);
-                _droppingTargets.Remove(key);
-                _dropAnimationVersion.Remove(key);
+                _dropProgress.Remove(key);
+                _dropTargets.Remove(key);
+                _dropAnimVersions.Remove(key);
             }
 
             _retargetedDrops.RemoveWhere(t => t == null);
@@ -89,108 +84,76 @@ namespace PuzzleAttack.Grid
 
         #endregion
 
-        #region Public API used by GridManager
+        #region Public API
 
         /// <summary>
-        ///     Checks if a swap has placed blocks in the path of falling blocks and handles the merge.
-        ///     Should be called after swap animation completes but before DropTiles().
-        ///     Returns true if mid-air interception was handled.
+        /// Start a horizontal swap animation for a tile.
         /// </summary>
-        public bool HandleMidAirSwapInterception(GameObject leftTile, GameObject rightTile, Vector2Int leftPos,
-            Vector2Int rightPos)
+        public void StartSwapAnimation(GameObject tile, Vector2Int targetPos)
         {
-            var handledLeft = CheckAndHandleMidAirIntercept(leftTile, leftPos);
-            var handledRight = CheckAndHandleMidAirIntercept(rightTile, rightPos);
-            return handledLeft || handledRight;
+            if (tile == null) return;
+
+            var ts = tile.GetComponent<Tile>();
+            ts?.StartSwapping(targetPos);
+
+            StartCoroutine(AnimateSwap(tile, targetPos));
         }
 
         /// <summary>
-        ///     Check if a single swapped tile is in the path of falling blocks and handle cascade.
+        /// Begin a drop animation from current position to target.
         /// </summary>
-        private bool CheckAndHandleMidAirIntercept(GameObject swappedTile, Vector2Int swappedPos)
+        public void BeginDrop(GameObject tile, Vector2Int from, Vector2Int to)
         {
-            if (swappedTile == null) return false;
+            if (tile == null) return;
 
-            var x = swappedPos.x;
-            var y = swappedPos.y;
-
-            // Collect all falling blocks in this column that are in/above the swapped block's position
-            List<(GameObject tile, Vector2Int gridPos)> fallingBlocksAbove = new();
-
-            for (var checkY = y; checkY < _gridHeight; checkY++)
+            if (_droppingTiles.Contains(tile))
             {
-                var blockAtPos = _grid[x, checkY];
-                if (blockAtPos != null && blockAtPos != swappedTile && _droppingTiles.Contains(blockAtPos))
-                {
-                    fallingBlocksAbove.Add((blockAtPos, new Vector2Int(x, checkY)));
-                    Debug.Log($"[MidAirSwapIntercept] Found falling block at ({x}, {checkY})");
-                }
+                Debug.LogWarning($"[BeginDrop] {tile.name} already dropping from {from} to {to}");
+                return;
             }
 
-            // If no falling blocks above, no interception needed
-            if (fallingBlocksAbove.Count == 0)
-                return false;
+            _droppingTiles.Add(tile);
 
-            Debug.Log(
-                $"[MidAirSwapIntercept] Swapped block at ({x}, {y}) has {fallingBlocksAbove.Count} falling blocks above. Handling cascade.");
+            var ts = tile.GetComponent<Tile>();
+            ts?.StartFalling(to);
 
-            // STOP all falling blocks and remove them from dropping state
-            foreach (var (tile, gridPos) in fallingBlocksAbove)
-            {
-                _droppingTiles.Remove(tile);
-                _droppingProgress.Remove(tile);
-                _droppingTargets.Remove(tile);
-                _dropAnimationVersion[tile] = GetVersion(tile) + 1; // Cancel their animations
-                _swappingTiles.Add(tile); // Protect them during cascade
+            var fromWorldPos = tile.transform.position;
+            Debug.Log($"[BeginDrop] {tile.name} from Y:{fromWorldPos.y:F3} to grid ({to.x},{to.y})");
 
-                var ts = tile.GetComponent<Tile>();
-                if (ts != null) ts.FinishMovement();
-            }
-
-            // CASCADE blocks upward to make room (top to bottom to avoid overwriting)
-            for (var i = fallingBlocksAbove.Count - 1; i >= 0; i--)
-            {
-                var (tile, oldPos) = fallingBlocksAbove[i];
-                var newY = oldPos.y + 1;
-
-                if (newY >= _gridHeight)
-                {
-                    // Can't cascade higher, abort
-                    Debug.LogWarning("[MidAirSwapIntercept] Cannot cascade block higher than grid! Aborting.");
-                    // Clean up swapping tiles protection
-                    foreach (var (t, p) in fallingBlocksAbove) _swappingTiles.Remove(t);
-
-                    return false;
-                }
-
-                var newPos = new Vector2Int(x, newY);
-                _grid[newPos.x, newPos.y] = tile;
-                _grid[oldPos.x, oldPos.y] = null;
-
-                Debug.Log($"[MidAirSwapIntercept] Cascading block from ({oldPos.x}, {oldPos.y}) to ({newPos.x}, {newY})");
-
-                // Update the list for animation
-                fallingBlocksAbove[i] = (tile, newPos);
-            }
-
-            // Now animate the cascaded blocks upward (quick nudge)
-            foreach (var (tile, newPos) in fallingBlocksAbove)
-            {
-                // Update Tile component to match new grid position before animation
-                var ts = tile.GetComponent<Tile>();
-                if (ts != null)
-                {
-                    ts.Initialize(newPos.x, newPos.y, ts.TileType, _gridManager);
-                }
-                StartCoroutine(MoveTileCascadeQuickNudge(tile, newPos));
-            }
-
-            return true;
+            StartCoroutine(AnimateDrop(tile, fromWorldPos, to, false));
         }
 
         /// <summary>
-        ///     Try to do a BlockSlip when exactly one cursor tile is falling and the other is idle.
-        ///     Kicks the idle tile under the falling one.
+        /// Check if any falling block in the column has passed the 50% threshold.
+        /// </summary>
+        public bool IsBlockSlipTooLate(int columnX, int rowY)
+        {
+            if (_droppingTiles.Count == 0) return false;
+
+            var offsetY = _gridRiser?.CurrentGridOffset ?? 0f;
+            var swapRowWorldY = rowY * _tileSize + offsetY;
+            var swapRowMidpoint = swapRowWorldY + _tileSize * 0.4f; // 10% buffer
+            var swapRowTop = swapRowWorldY + _tileSize;
+
+            foreach (var tile in _droppingTiles)
+            {
+                if (tile == null) continue;
+                if (!_dropTargets.TryGetValue(tile, out var target) || target.x != columnX) continue;
+                if (target.y > rowY) continue;
+
+                var tileWorldY = tile.transform.position.y;
+                if (tileWorldY >= swapRowWorldY && tileWorldY < swapRowTop && tileWorldY < swapRowMidpoint)
+                {
+                    Debug.Log($"[BlockSlip] TOO LATE: Tile at Y:{tileWorldY:F2} past midpoint {swapRowMidpoint:F2}");
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Try to kick an idle tile under a falling tile at cursor.
         /// </summary>
         public bool TryKickUnderFallingAtCursor(Vector2Int cursorPos)
         {
@@ -198,37 +161,32 @@ namespace PuzzleAttack.Grid
             var rightX = cursorPos.x + 1;
             var y = cursorPos.y;
 
-            // Early rejection: check if any falling block is past the 50% threshold
             if (IsBlockSlipTooLate(leftX, y) || IsBlockSlipTooLate(rightX, y))
             {
-                Debug.Log(">>> BLOCKSLIP BLOCKED - falling tile past 50% threshold <<<");
+                Debug.Log(">>> BLOCKSLIP BLOCKED - past 50% threshold <<<");
                 return false;
             }
 
             var leftTile = _grid[leftX, y];
             var rightTile = _grid[rightX, y];
 
-            var leftScript = leftTile != null ? leftTile.GetComponent<Tile>() : null;
-            var rightScript = rightTile != null ? rightTile.GetComponent<Tile>() : null;
+            var leftScript = leftTile?.GetComponent<Tile>();
+            var rightScript = rightTile?.GetComponent<Tile>();
 
-            var leftFalling = leftScript != null && leftScript.State == Tile.MovementState.Falling;
-            var rightFalling = rightScript != null && rightScript.State == Tile.MovementState.Falling;
+            var leftFalling = leftScript != null && leftScript.IsFalling;
+            var rightFalling = rightScript != null && rightScript.IsFalling;
+            var leftIdle = leftScript != null && leftScript.IsIdle;
+            var rightIdle = rightScript != null && rightScript.IsIdle;
 
-            var leftIdle = leftScript != null && leftScript.State == Tile.MovementState.Idle;
-            var rightIdle = rightScript != null && rightScript.State == Tile.MovementState.Idle;
-
-            // Only handle "exactly one falling, the other idle"
             if (leftFalling && rightIdle)
             {
-                // Falling LEFT, stationary RIGHT -> kick RIGHT under left column
-                StartCoroutine(HandleBlockSlip(rightTile, leftTile, new Vector2Int(leftX, y)));
+                StartCoroutine(ExecuteBlockSlip(rightTile, leftTile, new Vector2Int(leftX, y)));
                 return true;
             }
 
             if (rightFalling && leftIdle)
             {
-                // Falling RIGHT, stationary LEFT -> kick LEFT under right column
-                StartCoroutine(HandleBlockSlip(leftTile, rightTile, new Vector2Int(rightX, y)));
+                StartCoroutine(ExecuteBlockSlip(leftTile, rightTile, new Vector2Int(rightX, y)));
                 return true;
             }
 
@@ -236,8 +194,7 @@ namespace PuzzleAttack.Grid
         }
 
         /// <summary>
-        ///     Try to do a BlockSlip when both cursor tiles are idle but there's a falling block
-        ///     higher up in one of the columns that will pass through this row.
+        /// Try to handle BlockSlip when both cursor tiles are idle but there's a falling block above.
         /// </summary>
         public bool TryHandleBlockSlipAtCursor(Vector2Int cursorPos)
         {
@@ -245,41 +202,30 @@ namespace PuzzleAttack.Grid
             var rightX = cursorPos.x + 1;
             var y = cursorPos.y;
 
-            // Early rejection: check if any falling block is past the 50% threshold
             if (IsBlockSlipTooLate(leftX, y) || IsBlockSlipTooLate(rightX, y))
-            {
-                Debug.Log(">>> BLOCKSLIP BLOCKED - falling tile past 50% threshold <<<");
                 return false;
-            }
 
             var leftTile = _grid[leftX, y];
             var rightTile = _grid[rightX, y];
 
-            var leftScript = leftTile != null ? leftTile.GetComponent<Tile>() : null;
-            var rightScript = rightTile != null ? rightTile.GetComponent<Tile>() : null;
+            var leftScript = leftTile?.GetComponent<Tile>();
+            var rightScript = rightTile?.GetComponent<Tile>();
 
-            var leftIdle = leftScript == null || leftScript.State == Tile.MovementState.Idle;
-            var rightIdle = rightScript == null || rightScript.State == Tile.MovementState.Idle;
+            var leftIdle = leftScript == null || leftScript.IsIdle;
+            var rightIdle = rightScript == null || rightScript.IsIdle;
 
-            // We only handle the "both idle" case here; falling case is TryKickUnderFallingAtCursor
-            if (!leftIdle || !rightIdle)
-                return false;
+            if (!leftIdle || !rightIdle) return false;
 
-            GameObject fallingBlock;
-
-            // Case: slip RIGHT tile into LEFT column (falling above in left column)
-            if (rightTile != null &&
-                FindFallingBlockPassingRowInColumn(leftX, y, out fallingBlock))
+            // Check for falling block above in either column
+            if (rightTile != null && FindFallingBlockInColumn(leftX, y, out var fallingBlock))
             {
-                StartCoroutine(HandleBlockSlip(rightTile, fallingBlock, new Vector2Int(leftX, y)));
+                StartCoroutine(ExecuteBlockSlip(rightTile, fallingBlock, new Vector2Int(leftX, y)));
                 return true;
             }
 
-            // Case: slip LEFT tile into RIGHT column
-            if (leftTile != null &&
-                FindFallingBlockPassingRowInColumn(rightX, y, out fallingBlock))
+            if (leftTile != null && FindFallingBlockInColumn(rightX, y, out fallingBlock))
             {
-                StartCoroutine(HandleBlockSlip(leftTile, fallingBlock, new Vector2Int(rightX, y)));
+                StartCoroutine(ExecuteBlockSlip(leftTile, fallingBlock, new Vector2Int(rightX, y)));
                 return true;
             }
 
@@ -287,97 +233,39 @@ namespace PuzzleAttack.Grid
         }
 
         /// <summary>
-        ///     Used by GridManager.SwapCursorTiles() for normal swapping.
+        /// Handle mid-air swap interception - when a swap places blocks in path of falling blocks.
         /// </summary>
-        public void StartSwapAnimation(GameObject tile, Vector2Int targetPos)
+        public bool HandleMidAirSwapInterception(GameObject leftTile, GameObject rightTile, 
+            Vector2Int leftPos, Vector2Int rightPos)
         {
-            if (tile == null) return;
-
-            var ts = tile.GetComponent<Tile>();
-            if (ts != null)
-                ts.StartSwapping(targetPos);
-
-            StartCoroutine(MoveTileSwap(tile, targetPos));
-        }
-
-
-        /// <summary>
-        ///     Used by GridManager.DropTiles() for normal drops.
-        ///     Obstruction checking is disabled - blockslip handles retargeting explicitly.
-        /// </summary>
-        public void BeginDrop(GameObject tile, Vector2Int from, Vector2Int to)
-        {
-            if (tile == null) return;
-
-            // Check if this tile is already dropping
-            if (_droppingTiles.Contains(tile))
-            {
-                Debug.LogWarning(
-                    $"[BeginDrop] WARNING: {tile.name} is already dropping! From ({from.x}, {from.y}) to ({to.x}, {to.y})");
-                if (_droppingTargets.TryGetValue(tile, out var currentTarget))
-                    Debug.LogWarning($"[BeginDrop] Current target: ({currentTarget.x}, {currentTarget.y})");
-            }
-
-            _droppingTiles.Add(tile);
-
-            // Tell the Tile it's now falling
-            var ts = tile.GetComponent<Tile>();
-            if (ts != null)
-                ts.StartFalling(to);
-
-            // IMPORTANT: start from the tile's current world position
-            var fromWorldPos = tile.transform.position;
-            Debug.Log(
-                $"[BeginDrop] {tile.name} starting drop from world Y:{fromWorldPos.y:F3} (grid {from.x},{from.y}) to grid ({to.x},{to.y})");
-
-            // Obstruction checking disabled for normal drops
-            StartCoroutine(MoveTileDrop(tile, fromWorldPos, to, false));
+            var handledLeft = CheckMidAirIntercept(leftTile, leftPos);
+            var handledRight = CheckMidAirIntercept(rightTile, rightPos);
+            return handledLeft || handledRight;
         }
 
         #endregion
 
-        #region Block Slip Core
+        #region BlockSlip Core
 
-        /// <summary>
-        ///     Look for a falling block in the given column whose path will cross the given row.
-        ///     It uses the tile's current world height and its dropping target.
-        /// </summary>
-        private bool FindFallingBlockPassingRowInColumn(
-            int columnX,
-            int rowY,
-            out GameObject fallingBlock)
+        private bool FindFallingBlockInColumn(int columnX, int rowY, out GameObject fallingBlock)
         {
             fallingBlock = null;
+            if (_droppingTiles.Count == 0) return false;
 
-            if (_droppingTiles == null || _droppingTiles.Count == 0)
-                return false;
-
-            var offsetY = _gridRiser != null ? _gridRiser.CurrentGridOffset : 0f;
-
+            var offsetY = _gridRiser?.CurrentGridOffset ?? 0f;
             var bestDistance = float.MaxValue;
 
             foreach (var tile in _droppingTiles)
             {
                 if (tile == null) continue;
-
-                if (!_droppingTargets.TryGetValue(tile, out var target))
-                    continue;
-
-                if (target.x != columnX)
-                    continue;
+                if (!_dropTargets.TryGetValue(tile, out var target) || target.x != columnX) continue;
 
                 var currentWorldY = tile.transform.position.y;
                 var currentGridY = Mathf.RoundToInt((currentWorldY - offsetY) / _tileSize);
 
-                // Must currently be above this row
-                if (currentGridY <= rowY)
-                    continue;
+                if (currentGridY <= rowY || target.y > rowY) continue;
 
-                // Must eventually land at or below this row
-                if (target.y > rowY)
-                    continue;
-
-                float distance = currentGridY - rowY;
+                var distance = currentGridY - rowY;
                 if (distance < bestDistance)
                 {
                     bestDistance = distance;
@@ -387,68 +275,8 @@ namespace PuzzleAttack.Grid
 
             return fallingBlock != null;
         }
-        
-        /// <summary>
-        /// Check if a BlockSlip would be "too late" - i.e., any falling block in the target column
-        /// has already passed the 50% threshold of the swap row.
-        /// Returns true if the swap should be BLOCKED.
-        /// </summary>
-        public bool IsBlockSlipTooLate(int columnX, int rowY)
-        {
-            if (_droppingTiles == null || _droppingTiles.Count == 0)
-                return false;
 
-            var offsetY = _gridRiser != null ? _gridRiser.CurrentGridOffset : 0f;
-            var swapRowWorldY = rowY * _tileSize + offsetY;
-            var thresholdBuffer = _tileSize * 0.1f; // Same buffer you use in HandleBlockSlip
-            var swapRowMidpoint = swapRowWorldY + _tileSize * 0.5f - thresholdBuffer;
-            var swapRowTop = swapRowWorldY + _tileSize;
-
-            foreach (var tile in _droppingTiles)
-            {
-                if (tile == null) continue;
-
-                if (!_droppingTargets.TryGetValue(tile, out var target))
-                    continue;
-
-                // Only check blocks in this column that will pass through our row
-                if (target.x != columnX)
-                    continue;
-
-                // Must be targeting at or below our swap row
-                if (target.y > rowY)
-                    continue;
-
-                var tileWorldY = tile.transform.position.y;
-
-                // Is this tile currently in the swap row and past midpoint?
-                if (tileWorldY >= swapRowWorldY && tileWorldY < swapRowTop)
-                {
-                    // Past midpoint = too late
-                    if (tileWorldY < swapRowMidpoint)
-                    {
-                        Debug.Log($"[BlockSlip] TOO LATE: Tile at Y:{tileWorldY:F2} is past midpoint {swapRowMidpoint:F2} of row {rowY}");
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        ///     Executes the Block Slip mechanic.
-        ///     swappingBlock = the stationary block we kick under,
-        ///     fallingBlock  = any one of the blocks that was falling in that column
-        ///     (we don't actually need its original target here),
-        ///     fallingBlockPos = column and row where slip happens (cursor row).
-        ///     Behaviour:
-        ///     - Insert swappingBlock at fallingBlockPos
-        ///     - All tiles in that column at/above that row get pushed UP by 1 cell
-        ///     - Then DropTiles() runs so the whole column falls together.
-        /// </summary>
-        private IEnumerator HandleBlockSlip(GameObject swappingBlock, GameObject fallingBlock,
-            Vector2Int fallingBlockPos)
+        private IEnumerator ExecuteBlockSlip(GameObject swappingBlock, GameObject fallingBlock, Vector2Int slipPos)
         {
             _gridManager.SetIsSwapping(true);
 
@@ -458,372 +286,202 @@ namespace PuzzleAttack.Grid
                 yield break;
             }
 
-            var col = fallingBlockPos.x;
-            var row = fallingBlockPos.y;
+            var col = slipPos.x;
+            var row = slipPos.y;
 
-            // Where is the swapping block right now?
-            var swappingBlockPosOpt = _gridManager.FindTilePosition(swappingBlock);
-            if (!swappingBlockPosOpt.HasValue)
+            var swappingBlockPos = _gridManager.FindTilePosition(swappingBlock);
+            if (!swappingBlockPos.HasValue)
             {
                 _gridManager.SetIsSwapping(false);
                 yield break;
             }
 
-            var swappingBlockPos = swappingBlockPosOpt.Value;
-
-            // 1. Collect blocks in this column that need handling (excluding the swapping block).
-            //    Check BOTH the grid array AND falling blocks, since falling blocks may have
-            //    already been moved to their target position in the grid array.
-            //    Separate them into two groups based on fall progress:
-            //    - Blocks <50% through the swap row: nudge UP by 1 row
-            //    - Blocks >50% through the swap row: retarget to land on swapped block
-            List<(GameObject tile, Vector2Int from, Vector2Int to)> blocksToNudgeUp = new();
-            List<(GameObject tile, Vector2Int currentTarget)> blocksToRetarget = new();
-
+            // Collect blocks that need handling
+            var blocksToNudgeUp = new List<(GameObject tile, Vector2Int from, Vector2Int to)>();
+            var blocksToRetarget = new List<(GameObject tile, Vector2Int currentTarget)>();
             var processedBlocks = new HashSet<GameObject>();
 
             var swapRowWorldY = row * _tileSize + _gridRiser.CurrentGridOffset;
-            // Add a small buffer (10% of tile size) to prevent edge cases at exactly 50%
-            var thresholdBuffer = _tileSize * 0.1f;
-            var swapRowMidpoint = swapRowWorldY + _tileSize * 0.5f - thresholdBuffer;
+            var swapRowMidpoint = swapRowWorldY + _tileSize * 0.4f;
 
-            // First, check all falling blocks in this column
-            Debug.Log($"[BlockSlip] ========== DETECTING FALLING BLOCKS in column {col}, swap row {row} ==========");
-            Debug.Log($"[BlockSlip] Total dropping tiles in game: {_droppingTiles.Count}");
-
-            // Snapshot positions of all falling blocks before processing to prevent race conditions
-            Dictionary<GameObject, float> snapshotPositions = new Dictionary<GameObject, float>();
-            List<GameObject> blocksInColumn = new List<GameObject>();
-
+            // Snapshot falling block positions
+            var snapshotPositions = new Dictionary<GameObject, float>();
             foreach (var t in _droppingTiles)
             {
-                if (t != null && t != swappingBlock)
+                if (t != null && t != swappingBlock && _dropTargets.TryGetValue(t, out var target) && target.x == col)
                 {
-                    if (_droppingTargets.TryGetValue(t, out var target) && target.x == col)
-                    {
-                        snapshotPositions[t] = t.transform.position.y;
-                        blocksInColumn.Add(t);
-                    }
+                    snapshotPositions[t] = t.transform.position.y;
+                    _dropAnimVersions[t] = GetVersion(t) + 1; // Freeze animation
                 }
             }
 
-            // Immediately freeze all falling blocks in this column to prevent movement during processing
-            foreach (var t in blocksInColumn)
-            {
-                _dropAnimationVersion[t] = GetVersion(t) + 1; // Cancel their current drop animation
-            }
-
-            var fallingInColumn = 0;
+            // Categorize falling blocks
             foreach (var t in _droppingTiles)
             {
                 if (t == null || t == swappingBlock) continue;
+                if (!_dropTargets.TryGetValue(t, out var target) || target.x != col) continue;
 
-                // Check if this falling block is in our column or will pass through our swap row
-                if (!_droppingTargets.TryGetValue(t, out var target)) continue;
-                if (target.x != col) continue; // Different column, ignore
-
-                fallingInColumn++;
-                // Use snapshotted position for consistent threshold checks
-                var tileWorldY = snapshotPositions[t];
+                var tileWorldY = snapshotPositions.GetValueOrDefault(t, t.transform.position.y);
                 var currentGridY = Mathf.RoundToInt((tileWorldY - _gridRiser.CurrentGridOffset) / _tileSize);
 
-                Debug.Log(
-                    $"[BlockSlip] Falling block #{fallingInColumn} in column: currentY={tileWorldY:F2} (grid ~{currentGridY}), target=({target.x}, {target.y})");
+                if (currentGridY < row) continue;
 
-                // Check if this block is currently at or above the swap row
-                // If so, it needs to be handled (either retargeted or nudged)
-                if (currentGridY >= row)
+                var swapRowTop = swapRowWorldY + _tileSize;
+                var isInSwapRow = tileWorldY >= swapRowWorldY && tileWorldY < swapRowTop;
+
+                if (isInSwapRow)
                 {
-                    // Check if block is CURRENTLY IN the swap row (not just above it)
-                    var swapRowTop = swapRowWorldY + _tileSize;
-                    var isCurrentlyInSwapRow = tileWorldY >= swapRowWorldY && tileWorldY < swapRowTop;
-
-                    if (isCurrentlyInSwapRow)
-                    {
-                        // Block is currently in the swap row - check 50% threshold
-                        var isPastMidpoint = tileWorldY < swapRowMidpoint;
-
-                        if (isPastMidpoint)
-                        {
-                            // This block is >50% through the swap row - retarget it
-                            blocksToRetarget.Add((t, target));
-                            Debug.Log(
-                                $"[BlockSlip] Falling block is >50% through row {row} (Y: {tileWorldY:F2}, midpoint: {swapRowMidpoint:F2}), will retarget");
-                        }
-                        else
-                        {
-                            // This block is <50% through the swap row - nudge it up
-                            var gridPos = _gridManager.FindTilePosition(t);
-                            if (gridPos.HasValue)
-                            {
-                                var newY = gridPos.Value.y + 1;
-                                blocksToNudgeUp.Add((t, gridPos.Value, new Vector2Int(col, newY)));
-                                Debug.Log(
-                                    $"[BlockSlip] Falling block is <50% through row {row} (Y: {tileWorldY:F2}, midpoint: {swapRowMidpoint:F2}), will nudge up");
-                            }
-                        }
-                    }
+                    if (tileWorldY < swapRowMidpoint)
+                        blocksToRetarget.Add((t, target));
                     else
                     {
-                        // Block is NOT currently in the swap row - check if it's above or below
-                        if (tileWorldY >= swapRowTop)
-                        {
-                            // Block is above the swap row - it will be retargeted to land above the swapped block
-                            blocksToRetarget.Add((t, target));
-                            Debug.Log(
-                                $"[BlockSlip] Falling block is above row {row} (Y: {tileWorldY:F2}, swap row top: {swapRowTop:F2}), will retarget to land above swapped block");
-                        }
-                        else
-                        {
-                            // Block is below the swap row - ignore it (shouldn't be affected by this swap)
-                            Debug.Log(
-                                $"[BlockSlip] Falling block is below row {row} (Y: {tileWorldY:F2}, swap row: {swapRowWorldY:F2}), ignoring");
-                        }
+                        var gridPos = _gridManager.FindTilePosition(t);
+                        if (gridPos.HasValue)
+                            blocksToNudgeUp.Add((t, gridPos.Value, new Vector2Int(col, gridPos.Value.y + 1)));
                     }
-
-                    processedBlocks.Add(t);
                 }
+                else if (tileWorldY >= swapRowTop)
+                    blocksToRetarget.Add((t, target));
+
+                processedBlocks.Add(t);
             }
 
-            // Second, check stationary blocks in the grid at/above the swap row
+            // Add stationary blocks above swap row
             for (var y = row; y < _gridHeight; y++)
             {
                 var t = _grid[col, y];
                 if (t == null || t == swappingBlock || processedBlocks.Contains(t)) continue;
 
-                // This is a stationary (non-falling) block - nudge it up
                 var newY = y + 1;
                 if (newY >= _gridHeight)
                 {
-                    Debug.LogWarning("[BlockSlip] Cascade would overflow top of grid. Aborting slip.");
+                    Debug.LogWarning("[BlockSlip] Would overflow grid, aborting");
                     _gridManager.SetIsSwapping(false);
                     yield break;
                 }
 
                 blocksToNudgeUp.Add((t, new Vector2Int(col, y), new Vector2Int(col, newY)));
-                Debug.Log($"[BlockSlip] Stationary block at ({col}, {y}) will nudge up");
             }
 
-            // 2a. Cancel drops for blocks that will be nudged up
+            // Cancel drops for nudged blocks
             foreach (var (tile, from, to) in blocksToNudgeUp)
             {
                 if (tile == null) continue;
-
                 _droppingTiles.Remove(tile);
-                _droppingProgress.Remove(tile);
-                _droppingTargets.Remove(tile);
-
-                _dropAnimationVersion[tile] = GetVersion(tile) + 1;
-
-                var ts = tile.GetComponent<Tile>();
-                if (ts != null) ts.FinishMovement(); // no longer "falling"
+                _dropProgress.Remove(tile);
+                _dropTargets.Remove(tile);
+                _dropAnimVersions[tile] = GetVersion(tile) + 1;
+                tile.GetComponent<Tile>()?.FinishMovement();
             }
 
-            // 2b. For blocks that will be retargeted, we DON'T cancel their drops
-            //     Instead, we'll update their targets so they seamlessly adjust while falling
-
-            // Also cancel the falling block's drop if it's still tracked
+            // Cancel falling block's drop if tracked
             if (fallingBlock != null && _droppingTiles.Contains(fallingBlock))
             {
                 _droppingTiles.Remove(fallingBlock);
-                _droppingProgress.Remove(fallingBlock);
-                _droppingTargets.Remove(fallingBlock);
-                _dropAnimationVersion[fallingBlock] = GetVersion(fallingBlock) + 1;
-
-                var fbTs = fallingBlock.GetComponent<Tile>();
-                if (fbTs != null) fbTs.FinishMovement();
+                _dropProgress.Remove(fallingBlock);
+                _dropTargets.Remove(fallingBlock);
+                _dropAnimVersions[fallingBlock] = GetVersion(fallingBlock) + 1;
+                fallingBlock.GetComponent<Tile>()?.FinishMovement();
             }
 
-            // 3. Update the grid:
-            //    - clear old positions for the swapping block and blocks being nudged up
-            //    - place swapping block at slip row
-            //    - place nudged tiles at their new (y+1) positions
-            //    - retargeted blocks stay in their current grid positions (will be updated by their drop animation)
-            _grid[swappingBlockPos.x, swappingBlockPos.y] = null;
+            // Update grid: clear old positions
+            _grid[swappingBlockPos.Value.x, swappingBlockPos.Value.y] = null;
+            foreach (var (tile, from, to) in blocksToNudgeUp)
+                _grid[from.x, from.y] = null;
 
-            foreach (var (tile, from, to) in blocksToNudgeUp) _grid[from.x, from.y] = null;
-
-            // Place the kicked block in the slip cell
+            // Place swapping block and nudged blocks
             _grid[col, row] = swappingBlock;
+            foreach (var (tile, from, to) in blocksToNudgeUp)
+                _grid[to.x, to.y] = tile;
 
-            // Push nudged blocks up by one
-            foreach (var (tile, from, to) in blocksToNudgeUp) _grid[to.x, to.y] = tile;
-
-            // Mark as "protected" while we animate
+            // Mark as protected
             _swappingTiles.Add(swappingBlock);
             foreach (var (tile, from, to) in blocksToNudgeUp)
                 if (tile != null)
                     _swappingTiles.Add(tile);
 
-            // 4. Animate:
-            //    - horizontal swap of the kicked block into the column
-            //    - quick upward nudge for blocks being nudged
-            //    - smooth retargeting for blocks continuing to fall
-            StartSwapAnimation(swappingBlock, fallingBlockPos);
+            // Start animations
+            StartSwapAnimation(swappingBlock, slipPos);
 
             var maxCascadeDuration = 0f;
             foreach (var (tile, from, to) in blocksToNudgeUp)
             {
                 if (tile == null) continue;
-
-                // We'll reuse the cascade "smooth" animation to move them UP one row
-                var startWorldPos = tile.transform.position;
-                var targetWorldPos = new Vector3(
-                    to.x * _tileSize,
-                    to.y * _tileSize + _gridRiser.CurrentGridOffset,
-                    0);
-
-                var distance = Mathf.Abs(targetWorldPos.y - startWorldPos.y) / _tileSize;
-                var duration = _dropDuration * distance; // same speed as gravity
-                maxCascadeDuration = Mathf.Max(maxCascadeDuration, duration);
-
-                // Kick off the actual animation coroutine
-                StartCoroutine(MoveTileCascadeSmooth(tile, to));
+                var distance = Mathf.Abs(to.y - from.y);
+                maxCascadeDuration = Mathf.Max(maxCascadeDuration, _dropDuration * distance);
+                StartCoroutine(AnimateCascadeSmooth(tile, to));
             }
 
-            // 4b. Retarget blocks that are continuing to fall
-            //     Sort by current Y position (lowest first) so they stack properly
-            //     Calculate where each should land (stacking from the swap row upward)
+            // Handle retargeted blocks
+            blocksToRetarget.Sort((a, b) => 
+                a.tile.transform.position.y.CompareTo(b.tile.transform.position.y));
 
-            // Sort blocks by their current Y position (lowest first)
-            blocksToRetarget.Sort((a, b) =>
-            {
-                var aY = a.tile != null ? a.tile.transform.position.y : 0;
-                var bY = b.tile != null ? b.tile.transform.position.y : 0;
-                return aY.CompareTo(bY); // Lower Y values come first (lower on screen)
-            });
+            var nextRow = row;
+            var retargetPlan = new List<(GameObject tile, Vector2Int oldTarget, Vector2Int newTarget)>();
 
-            var nextAvailableRow = row; // Start at the swap row (where swappingBlock will be)
-
-            // First pass: calculate new targets and store them
-            List<(GameObject tile, Vector2Int oldTarget, Vector2Int newTarget)> retargetPlan = new();
-
-            Debug.Log($"[BlockSlip] ========== RETARGETING {blocksToRetarget.Count} BLOCKS ==========");
-            var blockIndex = 0;
             foreach (var (tile, oldTarget) in blocksToRetarget)
             {
                 if (tile == null) continue;
-
-                blockIndex++;
-                // This block should land one row above the previous block
-                nextAvailableRow++;
-                var newTarget = new Vector2Int(col, nextAvailableRow);
-
-                retargetPlan.Add((tile, oldTarget, newTarget));
-                Debug.Log(
-                    $"[BlockSlip] Block #{blockIndex}: {tile.name} from old target ({oldTarget.x}, {oldTarget.y}) to new target ({newTarget.x}, {newTarget.y}). Current visual Y: {tile.transform.position.y:F3}");
+                nextRow++;
+                retargetPlan.Add((tile, oldTarget, new Vector2Int(col, nextRow)));
             }
 
-            // Second pass: clear ALL old grid positions first
-            Debug.Log("[BlockSlip] ========== CLEARING OLD POSITIONS ==========");
-            blockIndex = 0;
+            // Clear old grid positions for retargeted blocks
             foreach (var (tile, oldTarget, newTarget) in retargetPlan)
-            {
-                blockIndex++;
                 if (_grid[oldTarget.x, oldTarget.y] == tile)
-                {
                     _grid[oldTarget.x, oldTarget.y] = null;
-                    Debug.Log(
-                        $"[BlockSlip] Block #{blockIndex} ({tile.name}): Cleared old grid position ({oldTarget.x}, {oldTarget.y})");
-                }
-                else
-                {
-                    var whatsThere = _grid[oldTarget.x, oldTarget.y];
-                    Debug.LogWarning(
-                        $"[BlockSlip] Block #{blockIndex} ({tile.name}): NOT found at old target ({oldTarget.x}, {oldTarget.y}), grid has: {(whatsThere != null ? whatsThere.name : "null")}");
-                }
-            }
 
-            // Third pass: set ALL new grid positions
+            // Set new grid positions
             foreach (var (tile, oldTarget, newTarget) in retargetPlan)
-            {
-                if (_grid[newTarget.x, newTarget.y] != null && _grid[newTarget.x, newTarget.y] != tile)
-                    Debug.LogWarning(
-                        $"[BlockSlip] Grid position ({newTarget.x}, {newTarget.y}) already occupied by {_grid[newTarget.x, newTarget.y].name}!");
-
                 _grid[newTarget.x, newTarget.y] = tile;
-                Debug.Log($"[BlockSlip] Set new grid position ({newTarget.x}, {newTarget.y})");
-            }
 
-            // Fourth pass: cancel animations, update Tile components, and start new drops
-            Debug.Log("[BlockSlip] ========== STARTING NEW ANIMATIONS ==========");
-            blockIndex = 0;
+            // Start retargeted drops
             var maxRetargetDuration = 0f;
-
             foreach (var (tile, oldTarget, newTarget) in retargetPlan)
             {
-                blockIndex++;
-                // Cancel the old drop animation and start a new one with the new target
-                // This creates a seamless retarget by starting from the tile's current position
-                var oldVersion = GetVersion(tile);
-                _dropAnimationVersion[tile] = oldVersion + 1; // Cancel old animation
+                _dropAnimVersions[tile] = GetVersion(tile) + 1;
+                _droppingTiles.Remove(tile);
+                _dropProgress.Remove(tile);
+                _dropTargets.Remove(tile);
 
-                var wasDropping = _droppingTiles.Contains(tile);
-                _droppingTiles.Remove(tile); // Remove from tracking
-                _droppingProgress.Remove(tile);
-                _droppingTargets.Remove(tile);
-
-                Debug.Log(
-                    $"[BlockSlip] Block #{blockIndex} ({tile.name}): Cancelled old drop animation (version {oldVersion} -> {oldVersion + 1}), was dropping: {wasDropping}");
-
-                // Update the Tile component
                 var ts = tile.GetComponent<Tile>();
-                if (ts != null)
-                {
-                    ts.Initialize(newTarget.x, newTarget.y, ts.TileType, _gridManager);
-                    ts.StartFalling(newTarget); // Reset to falling state with new target
-                }
+                ts?.Initialize(newTarget.x, newTarget.y, ts.TileType, _gridManager);
+                ts?.StartFalling(newTarget);
 
-                // Calculate drop duration for this block
-                var currentWorldPos = tile.transform.position;
+                var currentPos = tile.transform.position;
                 var targetWorldY = newTarget.y * _tileSize + _gridRiser.CurrentGridOffset;
-                var distance = Mathf.Abs(currentWorldPos.y - targetWorldY) / _tileSize;
-                var duration = _dropDuration * distance;
-                maxRetargetDuration = Mathf.Max(maxRetargetDuration, duration);
+                var distance = Mathf.Abs(currentPos.y - targetWorldY) / _tileSize;
+                maxRetargetDuration = Mathf.Max(maxRetargetDuration, _dropDuration * distance);
 
                 _droppingTiles.Add(tile);
-                _droppingTargets[tile] = newTarget;
-                // Obstruction checking DISABLED - HandleBlockSlip already calculated correct stack positions
-                // Enabling it would cause blocks to retarget when they detect each other
-                StartCoroutine(MoveTileDrop(tile, currentWorldPos, newTarget, false));
-
-                Debug.Log(
-                    $"[BlockSlip] Block #{blockIndex} ({tile.name}): Started new drop from Y:{currentWorldPos.y:F3} to grid({newTarget.x}, {newTarget.y}), duration: {duration:F2}s");
+                _dropTargets[tile] = newTarget;
+                StartCoroutine(AnimateDrop(tile, currentPos, newTarget, false));
             }
 
-            Debug.Log($"[BlockSlip] Max retarget duration: {maxRetargetDuration:F2}s");
-
-            // Wait for swap, cascade nudges, AND retargeted drops to finish
+            // Wait for all animations
             var waitTime = Mathf.Max(_swapDuration, maxCascadeDuration, maxRetargetDuration);
             if (waitTime > 0f)
-            {
-                Debug.Log(
-                    $"[BlockSlip] Waiting {waitTime:F2}s for animations to complete (swap:{_swapDuration:F2}s, cascade:{maxCascadeDuration:F2}s, retarget:{maxRetargetDuration:F2}s)");
                 yield return new WaitForSeconds(waitTime);
-            }
 
-            // Update the swapped block's Tile component coordinates to match its new grid position
+            // Finalize swapping block
             if (swappingBlock != null)
             {
-                var swappingBlockScript = swappingBlock.GetComponent<Tile>();
-                if (swappingBlockScript != null)
-                {
-                    swappingBlockScript.Initialize(col, row, swappingBlockScript.TileType, _gridManager);
-                    swappingBlock.transform.position = new Vector3(
-                        col * _tileSize,
-                        row * _tileSize + _gridRiser.CurrentGridOffset,
-                        0);
-                }
+                var ts = swappingBlock.GetComponent<Tile>();
+                ts?.Initialize(col, row, ts.TileType, _gridManager);
+                swappingBlock.transform.position = new Vector3(
+                    col * _tileSize,
+                    row * _tileSize + _gridRiser.CurrentGridOffset,
+                    0);
             }
 
-            // 5. Let gravity resolve everything: all blocks above empty cells will fall together.
-            //    This also fixes any tiny discrepancies that may have slipped through.
+            // Cleanup
             _swappingTiles.Remove(swappingBlock);
-            foreach (var (tile, from, to) in blocksToNudgeUp) _swappingTiles.Remove(tile);
+            foreach (var (tile, from, to) in blocksToNudgeUp)
+                _swappingTiles.Remove(tile);
 
             yield return _gridManager.StartCoroutine(_gridManager.DropTiles());
 
-            // 6. Check for matches after the slip + gravity resolution
+            // Check for matches
             var matches = _matchDetector.GetAllMatches();
             if (matches.Count > 0 && !_matchProcessor.IsProcessingMatches)
                 _gridManager.StartCoroutine(_matchProcessor.ProcessMatches(matches));
@@ -831,91 +489,132 @@ namespace PuzzleAttack.Grid
             _gridManager.SetIsSwapping(false);
         }
 
+        private bool CheckMidAirIntercept(GameObject swappedTile, Vector2Int swappedPos)
+        {
+            if (swappedTile == null) return false;
+
+            var x = swappedPos.x;
+            var y = swappedPos.y;
+
+            // Find falling blocks above swapped position
+            var fallingAbove = new List<(GameObject tile, Vector2Int gridPos)>();
+            for (var checkY = y; checkY < _gridHeight; checkY++)
+            {
+                var block = _grid[x, checkY];
+                if (block != null && block != swappedTile && _droppingTiles.Contains(block))
+                    fallingAbove.Add((block, new Vector2Int(x, checkY)));
+            }
+
+            if (fallingAbove.Count == 0) return false;
+
+            Debug.Log($"[MidAirIntercept] {fallingAbove.Count} falling blocks above ({x}, {y})");
+
+            // Stop all falling blocks
+            foreach (var (tile, gridPos) in fallingAbove)
+            {
+                _droppingTiles.Remove(tile);
+                _dropProgress.Remove(tile);
+                _dropTargets.Remove(tile);
+                _dropAnimVersions[tile] = GetVersion(tile) + 1;
+                _swappingTiles.Add(tile);
+                tile.GetComponent<Tile>()?.FinishMovement();
+            }
+
+            // Cascade blocks upward
+            for (var i = fallingAbove.Count - 1; i >= 0; i--)
+            {
+                var (tile, oldPos) = fallingAbove[i];
+                var newY = oldPos.y + 1;
+
+                if (newY >= _gridHeight)
+                {
+                    Debug.LogWarning("[MidAirIntercept] Cannot cascade higher, aborting");
+                    foreach (var (t, p) in fallingAbove)
+                        _swappingTiles.Remove(t);
+                    return false;
+                }
+
+                var newPos = new Vector2Int(x, newY);
+                _grid[newPos.x, newPos.y] = tile;
+                _grid[oldPos.x, oldPos.y] = null;
+
+                fallingAbove[i] = (tile, newPos);
+            }
+
+            // Animate cascade
+            foreach (var (tile, newPos) in fallingAbove)
+            {
+                var ts = tile.GetComponent<Tile>();
+                ts?.Initialize(newPos.x, newPos.y, ts.TileType, _gridManager);
+                StartCoroutine(AnimateCascadeQuick(tile, newPos));
+            }
+
+            return true;
+        }
 
         private int GetVersion(GameObject tile)
         {
-            return _dropAnimationVersion.TryGetValue(tile, out var v) ? v : 0;
+            return _dropAnimVersions.TryGetValue(tile, out var v) ? v : 0;
         }
 
         #endregion
 
-        #region Movement Coroutines (Swap, Cascade, Drop)
+        #region Animation Coroutines
 
-        private IEnumerator MoveTileSwap(GameObject tile, Vector2Int targetPos)
+        private IEnumerator AnimateSwap(GameObject tile, Vector2Int targetPos)
         {
             if (tile == null) yield break;
 
             var ts = tile.GetComponent<Tile>();
-
             var sr = tile.GetComponent<SpriteRenderer>();
-            var originalSortingOrder = sr != null ? sr.sortingOrder : 0;
-
+            var originalSortOrder = sr?.sortingOrder ?? 0;
             if (sr != null) sr.sortingOrder = 10;
 
-            // Convert to grid coordinates
             var startWorldPos = tile.transform.position;
-            var startGridX = (startWorldPos.x) / _tileSize;
+            var startGridX = startWorldPos.x / _tileSize;
             var startGridY = (startWorldPos.y - _gridRiser.CurrentGridOffset) / _tileSize;
             var currentTarget = targetPos;
             var targetGridY = (float)currentTarget.y;
 
-            var duration = _swapDuration;
-            float elapsed = 0;
-
-            // Track previous offset to detect row spawns
             var previousOffset = _gridRiser.CurrentGridOffset;
+            var elapsed = 0f;
 
-            while (elapsed < duration)
+            while (elapsed < _swapDuration)
             {
-                // Detect row spawn (CurrentGridOffset decreases by ~_tileSize)
+                // Detect row spawn
                 var currentOffset = _gridRiser.CurrentGridOffset;
                 if (currentOffset < previousOffset - (_tileSize * 0.1f))
                 {
-                    // Row spawned - shift grid coordinates up by 1
                     startGridY += 1f;
                     targetGridY += 1f;
                     currentTarget = new Vector2Int(currentTarget.x, currentTarget.y + 1);
-
-                    // Update tile component
-                    if (ts != null)
-                    {
-                        ts.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
-                    }
-
-                    Debug.Log($"[Swap] Row spawned during animation, shifted target from Y:{targetPos.y} to Y:{currentTarget.y}");
+                    ts?.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
                 }
                 previousOffset = currentOffset;
 
-                var progress = elapsed / duration;
-
-                // Lerp in grid coordinates, then convert to world
+                var progress = elapsed / _swapDuration;
                 var currentGridX = Mathf.Lerp(startGridX, currentTarget.x, progress);
                 var currentGridY = Mathf.Lerp(startGridY, targetGridY, progress);
 
-                var worldX = currentGridX * _tileSize;
-                var worldY = currentGridY * _tileSize + _gridRiser.CurrentGridOffset;
+                tile.transform.position = new Vector3(
+                    currentGridX * _tileSize,
+                    currentGridY * _tileSize + _gridRiser.CurrentGridOffset,
+                    0);
 
-                tile.transform.position = new Vector3(worldX, worldY, 0);
                 elapsed += Time.deltaTime;
                 yield return null;
             }
 
-            var finalPos = new Vector3(currentTarget.x * _tileSize, currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
-            tile.transform.position = finalPos;
+            tile.transform.position = new Vector3(
+                currentTarget.x * _tileSize,
+                currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset,
+                0);
 
-            if (ts != null) ts.FinishMovement();
-
-            if (sr != null) sr.sortingOrder = originalSortingOrder;
-
-            if (tile != null)
-            {
-                var __ts = tile.GetComponent<Tile>();
-                if (__ts != null)
-                    __ts.FinishMovement();
-            }
+            ts?.FinishMovement();
+            if (sr != null) sr.sortingOrder = originalSortOrder;
         }
 
-        private IEnumerator MoveTileCascadeSmooth(GameObject tile, Vector2Int toPos)
+        private IEnumerator AnimateCascadeSmooth(GameObject tile, Vector2Int toPos)
         {
             if (tile == null)
             {
@@ -924,53 +623,37 @@ namespace PuzzleAttack.Grid
             }
 
             var ts = tile.GetComponent<Tile>();
-
-            // Convert to grid coordinates
             var startWorldPos = tile.transform.position;
             var startGridY = (startWorldPos.y - _gridRiser.CurrentGridOffset) / _tileSize;
             var currentTarget = toPos;
             var targetGridY = (float)currentTarget.y;
+
             var distance = Mathf.Abs(targetGridY - startGridY);
             var duration = _dropDuration * distance;
-            float elapsed = 0;
-
-            // Track previous offset to detect row spawns
+            var elapsed = 0f;
             var previousOffset = _gridRiser.CurrentGridOffset;
 
             try
             {
                 while (elapsed < duration && tile != null)
                 {
-                    // Detect row spawn (CurrentGridOffset decreases by ~_tileSize)
                     var currentOffset = _gridRiser.CurrentGridOffset;
                     if (currentOffset < previousOffset - (_tileSize * 0.5f))
                     {
-                        // Row spawned - shift grid coordinates up by 1
                         var oldTarget = currentTarget;
                         startGridY += 1f;
                         targetGridY += 1f;
                         currentTarget = new Vector2Int(currentTarget.x, currentTarget.y + 1);
 
-                        // Update grid position
                         if (_grid[oldTarget.x, oldTarget.y] == tile)
-                        {
                             _grid[oldTarget.x, oldTarget.y] = null;
-                        }
                         _grid[currentTarget.x, currentTarget.y] = tile;
 
-                        // Update tile component
-                        if (ts != null)
-                        {
-                            ts.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
-                        }
-
-                        Debug.Log($"[CascadeSmooth] Row spawned during animation, shifted target from Y:{oldTarget.y} to Y:{currentTarget.y}");
+                        ts?.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
                     }
                     previousOffset = currentOffset;
 
                     var progress = elapsed / duration;
-
-                    // Lerp in grid coordinates
                     var currentGridY = Mathf.Lerp(startGridY, targetGridY, progress);
                     var worldY = currentGridY * _tileSize + _gridRiser.CurrentGridOffset;
 
@@ -981,14 +664,12 @@ namespace PuzzleAttack.Grid
 
                 if (tile != null)
                 {
-                    if (ts != null)
-                    {
-                        ts.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
-                        ts.FinishMovement();
-                    }
-
-                    tile.transform.position = new Vector3(currentTarget.x * _tileSize,
-                        currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
+                    ts?.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
+                    ts?.FinishMovement();
+                    tile.transform.position = new Vector3(
+                        currentTarget.x * _tileSize,
+                        currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset,
+                        0);
                 }
             }
             finally
@@ -997,7 +678,7 @@ namespace PuzzleAttack.Grid
             }
         }
 
-        private IEnumerator MoveTileCascadeQuickNudge(GameObject tile, Vector2Int toPos)
+        private IEnumerator AnimateCascadeQuick(GameObject tile, Vector2Int toPos)
         {
             if (tile == null)
             {
@@ -1006,53 +687,37 @@ namespace PuzzleAttack.Grid
             }
 
             var ts = tile.GetComponent<Tile>();
-
-            // Convert to grid coordinates
             var startWorldPos = tile.transform.position;
             var startGridY = (startWorldPos.y - _gridRiser.CurrentGridOffset) / _tileSize;
             var currentTarget = toPos;
             var targetGridY = (float)currentTarget.y;
-            var distance = Mathf.Abs(targetGridY - startGridY);
-            var duration = _dropDuration * distance * 0.5f;
-            float elapsed = 0;
 
-            // Track previous offset to detect row spawns
+            var distance = Mathf.Abs(targetGridY - startGridY);
+            var duration = _dropDuration * distance * 0.5f; // Quick nudge
+            var elapsed = 0f;
             var previousOffset = _gridRiser.CurrentGridOffset;
 
             try
             {
                 while (elapsed < duration && tile != null)
                 {
-                    // Detect row spawn (CurrentGridOffset decreases by ~_tileSize)
                     var currentOffset = _gridRiser.CurrentGridOffset;
                     if (currentOffset < previousOffset - (_tileSize * 0.5f))
                     {
-                        // Row spawned - shift grid coordinates up by 1
                         var oldTarget = currentTarget;
                         startGridY += 1f;
                         targetGridY += 1f;
                         currentTarget = new Vector2Int(currentTarget.x, currentTarget.y + 1);
 
-                        // Update grid position
                         if (_grid[oldTarget.x, oldTarget.y] == tile)
-                        {
                             _grid[oldTarget.x, oldTarget.y] = null;
-                        }
                         _grid[currentTarget.x, currentTarget.y] = tile;
 
-                        // Update tile component
-                        if (ts != null)
-                        {
-                            ts.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
-                        }
-
-                        Debug.Log($"[CascadeQuickNudge] Row spawned during animation, shifted target from Y:{oldTarget.y} to Y:{currentTarget.y}");
+                        ts?.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
                     }
                     previousOffset = currentOffset;
 
                     var progress = elapsed / duration;
-
-                    // Lerp in grid coordinates
                     var currentGridY = Mathf.Lerp(startGridY, targetGridY, progress);
                     var worldY = currentGridY * _tileSize + _gridRiser.CurrentGridOffset;
 
@@ -1063,14 +728,12 @@ namespace PuzzleAttack.Grid
 
                 if (tile != null)
                 {
-                    if (ts != null)
-                    {
-                        ts.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
-                        ts.FinishMovement();
-                    }
-
-                    tile.transform.position = new Vector3(currentTarget.x * _tileSize,
-                        currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
+                    ts?.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
+                    ts?.FinishMovement();
+                    tile.transform.position = new Vector3(
+                        currentTarget.x * _tileSize,
+                        currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset,
+                        0);
                 }
             }
             finally
@@ -1079,8 +742,7 @@ namespace PuzzleAttack.Grid
             }
         }
 
-        private IEnumerator MoveTileDrop(GameObject tile, Vector3 fromWorldPos, Vector2Int toPos,
-            bool checkForObstructions)
+        private IEnumerator AnimateDrop(GameObject tile, Vector3 fromWorldPos, Vector2Int toPos, bool checkObstructions)
         {
             if (tile == null)
             {
@@ -1088,66 +750,49 @@ namespace PuzzleAttack.Grid
                 yield break;
             }
 
-            var newTile = tile.GetComponent<Tile>();
-
+            var ts = tile.GetComponent<Tile>();
             var myVersion = GetVersion(tile) + 1;
-            _dropAnimationVersion[tile] = myVersion;
-
-            _droppingTargets[tile] = toPos;
+            _dropAnimVersions[tile] = myVersion;
+            _dropTargets[tile] = toPos;
 
             var sr = tile.GetComponent<SpriteRenderer>();
-            var originalSortingOrder = sr != null ? sr.sortingOrder : 0;
+            var originalSortOrder = sr?.sortingOrder ?? 0;
             if (sr != null) sr.sortingOrder = 10;
 
-            // Convert start position to grid coordinates (relative to grid, not world)
-            var startGridOffset = _gridRiser.CurrentGridOffset;
-            var startGridY = (fromWorldPos.y - startGridOffset) / _tileSize;
-            var startGridX = fromWorldPos.x / _tileSize;
-
+            var startGridY = (fromWorldPos.y - _gridRiser.CurrentGridOffset) / _tileSize;
             var currentTarget = toPos;
-
             var targetGridY = currentTarget.y;
+
             var distance = Mathf.Abs(startGridY - targetGridY);
             var duration = _dropDuration * distance;
-            float elapsed = 0;
-
-            // Track previous offset to detect row spawns
+            var elapsed = 0f;
             var previousOffset = _gridRiser.CurrentGridOffset;
 
             try
             {
                 while (elapsed < duration && tile != null && _droppingTiles.Contains(tile))
                 {
-                    // Detect row spawn (CurrentGridOffset decreases by ~_tileSize)
+                    // Detect row spawn
                     var currentOffset = _gridRiser.CurrentGridOffset;
                     if (currentOffset < previousOffset - (_tileSize * 0.5f))
                     {
-                        // Row spawned - shift grid coordinates up by 1
                         var oldTarget = currentTarget;
                         startGridY += 1f;
                         targetGridY += 1;
                         currentTarget = new Vector2Int(currentTarget.x, currentTarget.y + 1);
 
-                        // Update grid position
                         if (_grid[oldTarget.x, oldTarget.y] == tile)
-                        {
                             _grid[oldTarget.x, oldTarget.y] = null;
-                        }
                         _grid[currentTarget.x, currentTarget.y] = tile;
-                        _droppingTargets[tile] = currentTarget;
+                        _dropTargets[tile] = currentTarget;
 
-                        // Update tile component to match new grid position
-                        if (newTile != null)
-                        {
-                            newTile.Initialize(currentTarget.x, currentTarget.y, newTile.TileType, _gridManager);
-                            newTile.StartFalling(currentTarget);
-                        }
-
-                        Debug.Log($"[Drop] Row spawned during animation, shifted target from Y:{oldTarget.y} to Y:{currentTarget.y}");
+                        ts?.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
+                        ts?.StartFalling(currentTarget);
                     }
                     previousOffset = currentOffset;
 
-                    if (checkForObstructions)
+                    // Check for obstructions
+                    if (checkObstructions)
                     {
                         var currentWorldY = tile.transform.position.y;
                         var targetWorldY = currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset;
@@ -1155,7 +800,7 @@ namespace PuzzleAttack.Grid
 
                         if (distanceToTarget > 0.5f)
                         {
-                            var newTarget = CheckForPathObstruction(tile, currentTarget);
+                            var newTarget = CheckPathObstruction(tile, currentTarget);
                             if (newTarget.HasValue && newTarget.Value.y != currentTarget.y)
                             {
                                 var atNewTarget = _grid[newTarget.Value.x, newTarget.Value.y];
@@ -1164,40 +809,32 @@ namespace PuzzleAttack.Grid
                                     var oldTarget = currentTarget;
                                     currentTarget = newTarget.Value;
 
-                                    if (_grid[oldTarget.x, oldTarget.y] == tile) _grid[oldTarget.x, oldTarget.y] = null;
-
+                                    if (_grid[oldTarget.x, oldTarget.y] == tile)
+                                        _grid[oldTarget.x, oldTarget.y] = null;
                                     _grid[currentTarget.x, currentTarget.y] = tile;
 
-                                    if (newTile != null)
-                                    {
-                                        newTile.Initialize(currentTarget.x, currentTarget.y, newTile.TileType, _gridManager);
-                                        newTile.RetargetFall(currentTarget);
-                                    }
-
-                                    _droppingTargets[tile] = currentTarget;
+                                    ts?.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
+                                    ts?.RetargetFall(currentTarget);
+                                    _dropTargets[tile] = currentTarget;
                                     _retargetedDrops.Add(tile);
 
-                                    // Recalculate in grid coordinates for retargeting
                                     var retargetGridY = (tile.transform.position.y - _gridRiser.CurrentGridOffset) / _tileSize;
-                                    var remainingDistance = Mathf.Abs(retargetGridY - currentTarget.y);
+                                    var remaining = Mathf.Abs(retargetGridY - currentTarget.y);
 
                                     startGridY = retargetGridY;
                                     targetGridY = currentTarget.y;
-                                    duration = _dropDuration * remainingDistance;
+                                    duration = _dropDuration * remaining;
                                     elapsed = 0;
 
-                                    Debug.Log(
-                                        $"[Drop] Path obstructed! Retargeting from ({oldTarget.x}, {oldTarget.y}) to ({currentTarget.x}, {currentTarget.y})");
+                                    Debug.Log($"[Drop] Retargeted to ({currentTarget.x}, {currentTarget.y})");
                                 }
                             }
                         }
                     }
 
                     var progress = duration > 0 ? elapsed / duration : 1f;
-                    _droppingProgress[tile] = progress;
+                    _dropProgress[tile] = progress;
 
-                    // Lerp in GRID coordinates, then convert to world coordinates using current offset
-                    // This ensures the tile falls correctly relative to the grid even as it rises
                     var currentGridY = Mathf.Lerp(startGridY, targetGridY, progress);
                     var worldY = currentGridY * _tileSize + _gridRiser.CurrentGridOffset;
 
@@ -1206,70 +843,50 @@ namespace PuzzleAttack.Grid
                     yield return null;
                 }
 
-                if (tile != null &&
-                    _dropAnimationVersion.TryGetValue(tile, out var latestVersion) &&
-                    latestVersion == myVersion)
+                // Finalize position
+                if (tile != null && _dropAnimVersions.TryGetValue(tile, out var latestVersion) && latestVersion == myVersion)
                 {
-                    tile.transform.position = new Vector3(currentTarget.x * _tileSize,
-                        currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset, 0);
+                    tile.transform.position = new Vector3(
+                        currentTarget.x * _tileSize,
+                        currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset,
+                        0);
 
-                    if (newTile != null)
-                    {
-                        newTile.Initialize(currentTarget.x, currentTarget.y, newTile.TileType, _gridManager);
-                        newTile.FinishMovement();
-                        newTile.PlayLandSound();
-                    }
+                    ts?.Initialize(currentTarget.x, currentTarget.y, ts.TileType, _gridManager);
+                    ts?.FinishMovement();
+                    ts?.PlayLandSound();
 
-                    if (sr != null) sr.sortingOrder = originalSortingOrder;
+                    if (sr != null) sr.sortingOrder = originalSortOrder;
                 }
             }
             finally
             {
                 if (tile != null)
                 {
-                    var latestVersion = _dropAnimationVersion.TryGetValue(tile, out var v) ? v : 0;
+                    var latestVersion = _dropAnimVersions.TryGetValue(tile, out var v) ? v : 0;
 
-                    // Only clean up if this was the most recent animation
-                    // (checking latestVersion <= myVersion handles both completed and cancelled-without-replacement cases)
                     if (latestVersion <= myVersion)
                     {
-                        // Clean up tracking sets so GridRiser can update the tile's position
                         _droppingTiles.Remove(tile);
-                        _droppingProgress.Remove(tile);
-                        _droppingTargets.Remove(tile);
+                        _dropProgress.Remove(tile);
+                        _dropTargets.Remove(tile);
                         _retargetedDrops.Remove(tile);
 
-                        // Only update tile state if animation completed normally (not cancelled)
                         if (latestVersion == myVersion)
                         {
-                            var ts = tile.GetComponent<Tile>();
-                            if (ts != null)
-                                ts.FinishMovement();
-
-                            _dropAnimationVersion.Remove(tile);
-                            if (sr != null) sr.sortingOrder = originalSortingOrder;
+                            tile.GetComponent<Tile>()?.FinishMovement();
+                            _dropAnimVersions.Remove(tile);
+                            if (sr != null) sr.sortingOrder = originalSortOrder;
                         }
-                        else
+                        else if (sr != null)
                         {
-                            // Animation was cancelled and no new animation started
-                            // Just restore sorting order
-                            if (sr != null) sr.sortingOrder = originalSortingOrder;
-                            Debug.Log($"[Drop] Animation cancelled for {tile.name} (v{myVersion}), cleaned up tracking (latest v{latestVersion})");
+                            sr.sortingOrder = originalSortOrder;
                         }
-                    }
-                    else
-                    {
-                        // A newer animation has started - don't touch tracking sets
-                        Debug.Log($"[Drop] Animation ended for {tile.name} (v{myVersion}) but newer animation exists (v{latestVersion}), skipping cleanup");
                     }
                 }
             }
         }
 
-        /// <summary>
-        ///     Check for solid obstruction between tile's current height and its target.
-        /// </summary>
-        private Vector2Int? CheckForPathObstruction(GameObject tile, Vector2Int targetPos)
+        private Vector2Int? CheckPathObstruction(GameObject tile, Vector2Int targetPos)
         {
             if (tile == null) return null;
 
@@ -1286,37 +903,29 @@ namespace PuzzleAttack.Grid
                 var blockAtPos = _grid[x, y];
                 if (blockAtPos == null || blockAtPos == tile) continue;
 
-                var isSolidObstruction = false;
-
+                var isSolid = false;
                 if (_droppingTiles.Contains(blockAtPos))
                 {
-                    // A falling block is an obstruction if it's retargeted and will stop at or below this position
                     if (_retargetedDrops.Contains(blockAtPos) &&
-                        _droppingTargets.TryGetValue(blockAtPos, out var otherTarget) &&
-                        otherTarget.y <= y) // Fixed: target at or BELOW this position
+                        _dropTargets.TryGetValue(blockAtPos, out var otherTarget) &&
+                        otherTarget.y <= y)
                     {
-                        isSolidObstruction = true;
-                        Debug.Log(
-                            $"[Obstruction] Block at grid pos ({x}, {y}) is solid - targeting row {otherTarget.y}");
-                    }
-                    else
-                    {
-                        Debug.Log($"[Obstruction] Block at grid pos ({x}, {y}) is NOT solid - falling through");
+                        isSolid = true;
                     }
                 }
                 else
                 {
-                    isSolidObstruction = true;
-                    Debug.Log($"[Obstruction] Block at grid pos ({x}, {y}) is solid - stationary");
+                    isSolid = true;
                 }
 
-                if (isSolidObstruction)
+                if (isSolid)
                 {
                     var newTargetY = y + 1;
                     if (newTargetY < _gridHeight && newTargetY != targetPos.y)
                     {
-                        var atLandingPos = _grid[x, newTargetY];
-                        if (atLandingPos == null || atLandingPos == tile) return new Vector2Int(x, newTargetY);
+                        var atLanding = _grid[x, newTargetY];
+                        if (atLanding == null || atLanding == tile)
+                            return new Vector2Int(x, newTargetY);
                     }
                 }
             }

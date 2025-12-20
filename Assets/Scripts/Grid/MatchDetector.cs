@@ -3,72 +3,94 @@ using UnityEngine;
 
 namespace PuzzleAttack.Grid
 {
+    /// <summary>
+    /// Detects matches in the grid. Respects tile status effects that prevent matching.
+    /// </summary>
     public class MatchDetector : MonoBehaviour
     {
+        #region Private Fields
+
         private GameObject[,] _grid;
-        private int _gridHeight;
         private int _gridWidth;
+        private int _gridHeight;
+
+        #endregion
+
+        #region Initialization
 
         public void Initialize(GameObject[,] grid, int gridWidth, int gridHeight)
         {
-            this._grid = grid;
-            this._gridWidth = gridWidth;
-            this._gridHeight = gridHeight;
+            _grid = grid;
+            _gridWidth = gridWidth;
+            _gridHeight = gridHeight;
         }
 
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Get all matched tiles across the entire grid.
+        /// </summary>
         public List<GameObject> GetAllMatches()
         {
             var matches = new HashSet<GameObject>();
 
-            // Check horizontal matches
+            // Horizontal matches
             for (var y = 0; y < _gridHeight; y++)
             for (var x = 0; x < _gridWidth - 2; x++)
-                if (_grid[x, y] != null && _grid[x + 1, y] != null && _grid[x + 2, y] != null)
+            {
+                if (!CanMatch(x, y) || !CanMatch(x + 1, y) || !CanMatch(x + 2, y))
+                    continue;
+
+                var type1 = GetTileType(x, y);
+                var type2 = GetTileType(x + 1, y);
+                var type3 = GetTileType(x + 2, y);
+
+                if (type1 >= 0 && type1 == type2 && type2 == type3)
                 {
-                    var type1 = _grid[x, y].GetComponent<Tile>().TileType;
-                    var type2 = _grid[x + 1, y].GetComponent<Tile>().TileType;
-                    var type3 = _grid[x + 2, y].GetComponent<Tile>().TileType;
-
-                    if (type1 == type2 && type2 == type3)
-                    {
-                        matches.Add(_grid[x, y]);
-                        matches.Add(_grid[x + 1, y]);
-                        matches.Add(_grid[x + 2, y]);
-                    }
+                    matches.Add(_grid[x, y]);
+                    matches.Add(_grid[x + 1, y]);
+                    matches.Add(_grid[x + 2, y]);
                 }
+            }
 
-            // Check vertical matches
+            // Vertical matches
             for (var x = 0; x < _gridWidth; x++)
             for (var y = 0; y < _gridHeight - 2; y++)
-                if (_grid[x, y] != null && _grid[x, y + 1] != null && _grid[x, y + 2] != null)
-                {
-                    var type1 = _grid[x, y].GetComponent<Tile>().TileType;
-                    var type2 = _grid[x, y + 1].GetComponent<Tile>().TileType;
-                    var type3 = _grid[x, y + 2].GetComponent<Tile>().TileType;
+            {
+                if (!CanMatch(x, y) || !CanMatch(x, y + 1) || !CanMatch(x, y + 2))
+                    continue;
 
-                    if (type1 == type2 && type2 == type3)
-                    {
-                        matches.Add(_grid[x, y]);
-                        matches.Add(_grid[x, y + 1]);
-                        matches.Add(_grid[x, y + 2]);
-                    }
+                var type1 = GetTileType(x, y);
+                var type2 = GetTileType(x, y + 1);
+                var type3 = GetTileType(x, y + 2);
+
+                if (type1 >= 0 && type1 == type2 && type2 == type3)
+                {
+                    matches.Add(_grid[x, y]);
+                    matches.Add(_grid[x, y + 1]);
+                    matches.Add(_grid[x, y + 2]);
                 }
+            }
 
             return new List<GameObject>(matches);
         }
 
+        /// <summary>
+        /// Get matches grouped into connected components.
+        /// </summary>
         public List<List<GameObject>> GetMatchGroups()
         {
-            // First get all matched tiles
             var allMatches = new HashSet<GameObject>(GetAllMatches());
-
-            if (allMatches.Count == 0)
-                return new List<List<GameObject>>();
-
-            // Group matched tiles into separate connected groups
-            return GroupMatchedTiles(allMatches);
+            return allMatches.Count == 0 
+                ? new List<List<GameObject>>() 
+                : GroupMatchedTiles(allMatches);
         }
 
+        /// <summary>
+        /// Get matches within a specific area.
+        /// </summary>
         public List<GameObject> GetMatchesInArea(int minX, int maxX, int minY, int maxY)
         {
             var matches = new HashSet<GameObject>();
@@ -78,55 +100,86 @@ namespace PuzzleAttack.Grid
             minY = Mathf.Max(0, minY);
             maxY = Mathf.Min(_gridHeight - 1, maxY);
 
-            // Check horizontal matches
+            // Horizontal
             for (var y = minY; y <= maxY; y++)
             for (var x = minX; x <= maxX - 2; x++)
-                if (_grid[x, y] != null && _grid[x + 1, y] != null && _grid[x + 2, y] != null)
+            {
+                if (!CanMatch(x, y) || !CanMatch(x + 1, y) || !CanMatch(x + 2, y))
+                    continue;
+
+                var type1 = GetTileType(x, y);
+                var type2 = GetTileType(x + 1, y);
+                var type3 = GetTileType(x + 2, y);
+
+                if (type1 >= 0 && type1 == type2 && type2 == type3)
                 {
-                    var type1 = _grid[x, y].GetComponent<Tile>().TileType;
-                    var type2 = _grid[x + 1, y].GetComponent<Tile>().TileType;
-                    var type3 = _grid[x + 2, y].GetComponent<Tile>().TileType;
-
-                    if (type1 == type2 && type2 == type3)
-                    {
-                        matches.Add(_grid[x, y]);
-                        matches.Add(_grid[x + 1, y]);
-                        matches.Add(_grid[x + 2, y]);
-                    }
+                    matches.Add(_grid[x, y]);
+                    matches.Add(_grid[x + 1, y]);
+                    matches.Add(_grid[x + 2, y]);
                 }
+            }
 
-            // Check vertical matches
+            // Vertical
             for (var x = minX; x <= maxX; x++)
             for (var y = minY; y <= maxY - 2; y++)
-                if (_grid[x, y] != null && _grid[x, y + 1] != null && _grid[x, y + 2] != null)
-                {
-                    var type1 = _grid[x, y].GetComponent<Tile>().TileType;
-                    var type2 = _grid[x, y + 1].GetComponent<Tile>().TileType;
-                    var type3 = _grid[x, y + 2].GetComponent<Tile>().TileType;
+            {
+                if (!CanMatch(x, y) || !CanMatch(x, y + 1) || !CanMatch(x, y + 2))
+                    continue;
 
-                    if (type1 == type2 && type2 == type3)
-                    {
-                        matches.Add(_grid[x, y]);
-                        matches.Add(_grid[x, y + 1]);
-                        matches.Add(_grid[x, y + 2]);
-                    }
+                var type1 = GetTileType(x, y);
+                var type2 = GetTileType(x, y + 1);
+                var type3 = GetTileType(x, y + 2);
+
+                if (type1 >= 0 && type1 == type2 && type2 == type3)
+                {
+                    matches.Add(_grid[x, y]);
+                    matches.Add(_grid[x, y + 1]);
+                    matches.Add(_grid[x, y + 2]);
                 }
+            }
 
             return new List<GameObject>(matches);
         }
 
+        /// <summary>
+        /// Group a list of matched tiles into connected components.
+        /// </summary>
         public List<List<GameObject>> GroupMatchedTiles(List<GameObject> matches)
         {
-            var allMatches = new HashSet<GameObject>(matches);
-            return GroupMatchedTiles(allMatches);
+            return GroupMatchedTiles(new HashSet<GameObject>(matches));
         }
+
+        /// <summary>
+        /// Find tiles adjacent to a position that have a specific status or are garbage.
+        /// Used for curing burning blocks and converting garbage.
+        /// </summary>
+        public List<GameObject> GetAdjacentTiles(int x, int y)
+        {
+            var adjacent = new List<GameObject>();
+            var directions = new[] { new Vector2Int(-1, 0), new Vector2Int(1, 0), 
+                                      new Vector2Int(0, -1), new Vector2Int(0, 1) };
+
+            foreach (var dir in directions)
+            {
+                var nx = x + dir.x;
+                var ny = y + dir.y;
+
+                if (IsValidPosition(nx, ny) && _grid[nx, ny] != null)
+                    adjacent.Add(_grid[nx, ny]);
+            }
+
+            return adjacent;
+        }
+
+        #endregion
+
+        #region Private Helpers
 
         private List<List<GameObject>> GroupMatchedTiles(HashSet<GameObject> allMatches)
         {
             if (allMatches.Count == 0)
                 return new List<List<GameObject>>();
 
-            // Group matched tiles into separate connected groups
             var groups = new List<List<GameObject>>();
             var processed = new HashSet<GameObject>();
 
@@ -135,7 +188,7 @@ namespace PuzzleAttack.Grid
                 if (processed.Contains(tile) || tile == null)
                     continue;
 
-                // Start a new group with flood fill
+                // Flood fill to find connected group
                 var group = new List<GameObject>();
                 var queue = new Queue<GameObject>();
                 queue.Enqueue(tile);
@@ -147,8 +200,8 @@ namespace PuzzleAttack.Grid
                     group.Add(current);
 
                     var currentTile = current.GetComponent<Tile>();
+                    if (currentTile == null) continue;
 
-                    // Check adjacent tiles (up, down, left, right)
                     var neighbors = new[]
                     {
                         new Vector2Int(currentTile.GridX - 1, currentTile.GridY),
@@ -157,16 +210,17 @@ namespace PuzzleAttack.Grid
                         new Vector2Int(currentTile.GridX, currentTile.GridY + 1)
                     };
 
-                    foreach (var neighborPos in neighbors)
-                        if (IsValidPosition(neighborPos.x, neighborPos.y))
+                    foreach (var pos in neighbors)
+                    {
+                        if (!IsValidPosition(pos.x, pos.y)) continue;
+
+                        var neighbor = _grid[pos.x, pos.y];
+                        if (neighbor != null && allMatches.Contains(neighbor) && !processed.Contains(neighbor))
                         {
-                            var neighbor = _grid[neighborPos.x, neighborPos.y];
-                            if (neighbor != null && allMatches.Contains(neighbor) && !processed.Contains(neighbor))
-                            {
-                                queue.Enqueue(neighbor);
-                                processed.Add(neighbor);
-                            }
+                            queue.Enqueue(neighbor);
+                            processed.Add(neighbor);
                         }
+                    }
                 }
 
                 groups.Add(group);
@@ -179,5 +233,27 @@ namespace PuzzleAttack.Grid
         {
             return x >= 0 && x < _gridWidth && y >= 0 && y < _gridHeight;
         }
+
+        private int GetTileType(int x, int y)
+        {
+            if (_grid[x, y] == null) return -1;
+            var tile = _grid[x, y].GetComponent<Tile>();
+            return tile != null ? tile.TileType : -1;
+        }
+
+        /// <summary>
+        /// Check if tile at position can participate in matches.
+        /// </summary>
+        private bool CanMatch(int x, int y)
+        {
+            if (_grid[x, y] == null) return false;
+
+            var tile = _grid[x, y].GetComponent<Tile>();
+            if (tile == null) return false;
+
+            return tile.CanMatch();
+        }
+
+        #endregion
     }
 }

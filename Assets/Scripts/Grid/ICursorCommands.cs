@@ -12,6 +12,6 @@ namespace PuzzleAttack.Grid
 
         // Grid Manipulators
         void Swap();
-        void FastRiseGrid(); // Not technically cursor related, but might as well throw it here
+        void FastRiseGrid();
     }
 }
