@@ -3,6 +3,8 @@ using TMPro;
 using UnityEngine;
 using System.Text;
 using System.Collections;
+using UnityEditor.Experimental.GraphView;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// Ultimate debug tool for monitoring game state, performance, and grid information.
@@ -32,28 +34,28 @@ public class Debugger : MonoBehaviour
     [SerializeField] private int fpsAveragingFrames = 30;
 
     // FPS tracking
-    private float[] fpsBuffer;
-    private int fpsBufferIndex;
-    private float fpsUpdateTimer;
+    private float[] _fpsBuffer;
+    private int _fpsBufferIndex;
+    private float _fpsUpdateTimer;
 
     // Memory tracking
-    private float memoryUpdateTimer;
-    private float lastMemoryUsage;
+    private float _memoryUpdateTimer;
+    private float _lastMemoryUsage;
 
     // State
-    private bool isVisible;
-    private float debugUpdateTimer;
-    private StringBuilder sb;
+    private bool _isVisible;
+    private float _debugUpdateTimer;
+    private StringBuilder _sb;
 
     // Performance metrics
-    private int frameCount;
-    private float deltaTimeSum;
+    private int _frameCount;
+    private float _deltaTimeSum;
 
     void Awake()
     {
         // Initialize FPS buffer
-        fpsBuffer = new float[fpsAveragingFrames];
-        sb = new StringBuilder(1024);
+        _fpsBuffer = new float[fpsAveragingFrames];
+        _sb = new StringBuilder(1024);
 
         // Auto-find references if not set
         if (gridManager == null)
@@ -76,9 +78,9 @@ public class Debugger : MonoBehaviour
         }
 
         // Set initial visibility
-        isVisible = startVisible;
+        _isVisible = startVisible;
         if (debugPanel != null)
-            debugPanel.SetActive(isVisible);
+            debugPanel.SetActive(_isVisible);
     }
 
     void Start()
@@ -108,12 +110,12 @@ public class Debugger : MonoBehaviour
         }
 
         // Update debug text periodically
-        if (isVisible)
+        if (_isVisible)
         {
-            debugUpdateTimer += Time.unscaledDeltaTime;
-            if (debugUpdateTimer >= updateInterval)
+            _debugUpdateTimer += Time.unscaledDeltaTime;
+            if (_debugUpdateTimer >= updateInterval)
             {
-                debugUpdateTimer = 0f;
+                _debugUpdateTimer = 0f;
                 UpdateDebugDisplay();
             }
         }
@@ -169,13 +171,13 @@ public class Debugger : MonoBehaviour
 
     void ToggleDebugOverlay()
     {
-        isVisible = !isVisible;
+        _isVisible = !_isVisible;
         if (debugPanel != null)
         {
-            debugPanel.SetActive(isVisible);
+            debugPanel.SetActive(_isVisible);
         }
 
-        if (isVisible)
+        if (_isVisible)
         {
             UpdateDebugDisplay(); // Immediate update when showing
         }
@@ -183,33 +185,67 @@ public class Debugger : MonoBehaviour
 
     void HandleTimeScaleControls()
     {
-        if (Input.GetKeyDown(KeyCode.Minus)) // - key
-        {
-            Time.timeScale = 0.1f; // slow motion
-            Debug.Log("Time scale: 0.1x (Slow Motion)");
-        }
-        if (Input.GetKeyDown(KeyCode.Equals)) // = key
+        // Timescale Hard Setters
+        if (Input.GetKeyDown(KeyCode.Alpha1)) // 1 key
         {
             Time.timeScale = 1f; // normal
-            Debug.Log("Time scale: 1.0x (Normal)");
+            Debug.Log("Time scale: " + Time.timeScale);
         }
-        if (Input.GetKeyDown(KeyCode.Alpha0)) // 0 key
-        {
-            Time.timeScale = 0f; // freeze
-            Debug.Log("Time scale: 0.0x (Frozen)");
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha9)) // 9 key
+        if (Input.GetKeyDown(KeyCode.Alpha2)) // 2 key
         {
             Time.timeScale = 2f; // fast
-            Debug.Log("Time scale: 2.0x (Fast)");
+            Debug.Log("Time scale: " + Time.timeScale);
         }
+        if (Input.GetKeyDown(KeyCode.Alpha3)) // 3 key
+        {
+            Time.timeScale = 3f; // ultra
+            Debug.Log("Time scale: " + Time.timeScale);
+        }
+        if (Input.GetKeyDown(KeyCode.Alpha4) || Input.GetKeyDown(KeyCode.Alpha0)) // 4 key
+        {
+            Time.timeScale = 0f; // pause
+            Debug.Log("Time scale: " + Time.timeScale);
+        }
+        
+        // Timescale soft incrementors
+        if (Input.GetKeyDown(KeyCode.Minus))
+        {
+            if (Time.timeScale != 0f)
+            {
+                if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+                {
+                    Time.timeScale -= 0.01f;
+                    Debug.Log("Time scale: " + Time.timeScale);
+                }
+                else
+                {
+                    Time.timeScale -= 0.1f;
+                    Debug.Log("Time scale: " + Time.timeScale);  
+                }
+            }
+        }
+        
+        if (Input.GetKeyDown(KeyCode.Equals))
+        {
+            if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+            {
+                Time.timeScale += 0.01f;
+                Debug.Log("Time scale: " + Time.timeScale);
+            }
+            else
+            {
+                Time.timeScale += 0.1f;
+                Debug.Log("Time scale: " + Time.timeScale);  
+            }
+        }
+        
     }
 
     void UpdateFPSTracking()
     {
         // Store FPS in circular buffer
-        fpsBuffer[fpsBufferIndex] = 1f / Time.unscaledDeltaTime;
-        fpsBufferIndex = (fpsBufferIndex + 1) % fpsAveragingFrames;
+        _fpsBuffer[_fpsBufferIndex] = 1f / Time.unscaledDeltaTime;
+        _fpsBufferIndex = (_fpsBufferIndex + 1) % fpsAveragingFrames;
     }
 
     float GetAverageFPS()
@@ -217,7 +253,7 @@ public class Debugger : MonoBehaviour
         float sum = 0f;
         for (int i = 0; i < fpsAveragingFrames; i++)
         {
-            sum += fpsBuffer[i];
+            sum += _fpsBuffer[i];
         }
         return sum / fpsAveragingFrames;
     }
@@ -226,101 +262,95 @@ public class Debugger : MonoBehaviour
     {
         if (debugText == null) return;
 
-        sb.Clear();
-        sb.AppendLine("=== DEBUG OVERLAY (F1 to toggle) ===");
-        sb.AppendLine();
+        _sb.Clear();
+        _sb.AppendLine("=== DEBUG OVERLAY (F1 to toggle) ===");
+        _sb.AppendLine();
 
         // Performance Section
         if (showFPS || showMemory)
         {
-            sb.AppendLine("--- PERFORMANCE ---");
+            _sb.AppendLine("--- PERFORMANCE ---");
 
             if (showFPS)
             {
                 float avgFPS = GetAverageFPS();
                 float currentFPS = 1f / Time.unscaledDeltaTime;
-                sb.AppendLine($"FPS: {currentFPS:F0} (Avg: {avgFPS:F0})");
-                sb.AppendLine($"Frame Time: {Time.unscaledDeltaTime * 1000f:F2}ms");
+                _sb.AppendLine($"FPS: {currentFPS:F0} (Avg: {avgFPS:F0})");
+                _sb.AppendLine($"Frame Time: {Time.unscaledDeltaTime * 1000f:F2}ms");
             }
 
             if (showMemory)
             {
                 float memoryMB = (System.GC.GetTotalMemory(false) / 1024f / 1024f);
-                sb.AppendLine($"Memory: {memoryMB:F2} MB");
+                _sb.AppendLine($"Memory: {memoryMB:F2} MB");
             }
 
-            sb.AppendLine($"Time Scale: {Time.timeScale:F2}x");
-            sb.AppendLine();
+            _sb.AppendLine($"Time Scale: {Time.timeScale:F2}x");
+            _sb.AppendLine();
         }
 
         // Game State Section
-        sb.AppendLine("--- GAME STATE ---");
+        _sb.AppendLine("--- GAME STATE ---");
         if (gameStateManager != null)
         {
-            sb.AppendLine($"State: {gameStateManager.CurrentState}");
-            sb.AppendLine($"Paused: {gameStateManager.IsPaused}");
-            sb.AppendLine($"Game Over: {gameStateManager.IsGameOver}");
+            _sb.AppendLine($"State: {gameStateManager.CurrentState}");
+            _sb.AppendLine($"Paused: {gameStateManager.IsPaused}");
+            _sb.AppendLine($"Game Over: {gameStateManager.IsGameOver}");
         }
         else
         {
-            sb.AppendLine("GameStateManager: NOT FOUND");
+            _sb.AppendLine("GameStateManager: NOT FOUND");
         }
-        sb.AppendLine();
+        _sb.AppendLine();
 
         // Score Section
         if (scoreManager != null)
         {
-            sb.AppendLine("--- SCORE ---");
-            sb.AppendLine($"Score: {scoreManager.GetScore()}");
-            sb.AppendLine($"Combo: x{scoreManager.GetCombo()}");
-            sb.AppendLine();
+            _sb.AppendLine("--- SCORE ---");
+            _sb.AppendLine($"Score: {scoreManager.GetScore()}");
+            _sb.AppendLine($"Combo: x{scoreManager.GetCombo()}");
+            _sb.AppendLine();
         }
 
         // Grid Section
         if (gridManager != null)
         {
-            sb.AppendLine("--- GRID STATE ---");
-            sb.AppendLine($"Swapping: {gridManager.IsSwapping}");
+            _sb.AppendLine("--- GRID STATE ---");
+            _sb.AppendLine($"Swapping: {gridManager.IsSwapping}");
 
             if (matchProcessor != null)
             {
-                sb.AppendLine($"Processing Matches: {matchProcessor.IsProcessingMatches}");
+                _sb.AppendLine($"Processing Matches: {matchProcessor.IsProcessingMatches}");
             }
-            sb.AppendLine();
+            _sb.AppendLine();
         }
 
         // GridRiser Section
         if (gridRiser != null)
         {
-            sb.AppendLine("--- GRID RISER ---");
-            sb.AppendLine($"Grid Offset: {gridRiser.CurrentGridOffset:F3}");
-            sb.AppendLine($"Grace Period: {gridRiser.IsInGracePeriod}");
-            sb.AppendLine($"Game Over: {gridRiser.IsGameOver}");
-            sb.AppendLine();
+            _sb.AppendLine("--- GRID RISER ---");
+            _sb.AppendLine($"Grid Offset: {gridRiser.CurrentGridOffset:F3}");
+            _sb.AppendLine($"Grace Period: {gridRiser.IsInGracePeriod}");
+            _sb.AppendLine($"Game Over: {gridRiser.IsGameOver}");
+            _sb.AppendLine();
         }
 
         // Cursor Section
         if (cursorController != null)
         {
-            sb.AppendLine("--- CURSOR ---");
+            _sb.AppendLine("--- CURSOR ---");
             var cursorPos = cursorController.CursorPosition;
-            sb.AppendLine($"Position: ({cursorPos.x}, {cursorPos.y})");
-            sb.AppendLine();
+            _sb.AppendLine($"Position: ({cursorPos.x}, {cursorPos.y})");
+            _sb.AppendLine();
         }
 
-        // Controls Help
-        #if DEBUG || UNITY_EDITOR
-        sb.AppendLine("--- TIME CONTROLS (Debug Only) ---");
-        sb.AppendLine("0: Freeze  |  -: 0.1x  |  =: 1.0x  |  9: 2.0x");
-        #endif
-
-        debugText.text = sb.ToString();
+        debugText.text = _sb.ToString();
     }
 
     // Public method to manually update (can be called from other scripts)
     public void ForceUpdate()
     {
-        if (isVisible)
+        if (_isVisible)
         {
             UpdateDebugDisplay();
         }
@@ -329,14 +359,14 @@ public class Debugger : MonoBehaviour
     // Public method to show specific message
     public void LogDebugMessage(string message)
     {
-        if (isVisible && debugText != null)
+        if (_isVisible && debugText != null)
         {
-            sb.Clear();
-            sb.AppendLine(debugText.text);
-            sb.AppendLine();
-            sb.AppendLine("--- CUSTOM MESSAGE ---");
-            sb.AppendLine(message);
-            debugText.text = sb.ToString();
+            _sb.Clear();
+            _sb.AppendLine(debugText.text);
+            _sb.AppendLine();
+            _sb.AppendLine("--- CUSTOM MESSAGE ---");
+            _sb.AppendLine(message);
+            debugText.text = _sb.ToString();
         }
     }
 }
