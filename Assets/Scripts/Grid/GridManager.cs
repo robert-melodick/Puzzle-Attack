@@ -23,7 +23,7 @@ namespace PuzzleAttack.Grid
 
         [Header("Timing")]
         public float swapDuration = 0.15f;
-        public float dropDuration = 0.15f;
+        public float dropSpeed = 6.67f; // tiles per second
 
         [Header("Components")]
         public CursorController cursorController;
@@ -96,7 +96,7 @@ namespace PuzzleAttack.Grid
                 matchDetector, matchProcessor, tileSize, gridWidth, gridHeight);
 
             blockSlipManager.Initialize(this, _grid, gridWidth, gridHeight, tileSize,
-                swapDuration, dropDuration, gridRiser, matchDetector, matchProcessor,
+                swapDuration, dropSpeed, gridRiser, matchDetector, matchProcessor,
                 cursorController, _swappingTiles, _droppingTiles);
         }
 
@@ -312,7 +312,7 @@ namespace PuzzleAttack.Grid
                     midAirHandled = blockSlipManager.HandleMidAirSwapInterception(leftTile, rightTile, leftPos.Value, rightPos.Value);
 
                 if (midAirHandled)
-                    yield return new WaitForSeconds(dropDuration * 0.5f);
+                    yield return new WaitForSeconds(0.5f / dropSpeed);
 
                 yield return StartCoroutine(DropTiles());
 
@@ -410,7 +410,7 @@ namespace PuzzleAttack.Grid
 
             if (drops.Count > 0)
             {
-                var waitTime = dropDuration * maxDropDistance + 0.05f;
+                var waitTime = maxDropDistance / dropSpeed + 0.05f;
                 Debug.Log($"[DropTiles] Waiting {waitTime:F2}s for {drops.Count} drops");
                 yield return new WaitForSeconds(waitTime);
             }

@@ -26,7 +26,7 @@ namespace PuzzleAttack.Grid
         private int _gridHeight;
         private float _tileSize;
         private float _swapDuration;
-        private float _dropDuration;
+        private float _dropSpeed; // tiles per second
 
         // Drop tracking
         private readonly Dictionary<GameObject, int> _dropAnimVersions = new();
@@ -42,7 +42,7 @@ namespace PuzzleAttack.Grid
             GridManager gridManager,
             GameObject[,] grid,
             int gridWidth, int gridHeight, float tileSize,
-            float swapDuration, float dropDuration,
+            float swapDuration, float dropSpeed,
             GridRiser gridRiser,
             MatchDetector matchDetector,
             MatchProcessor matchProcessor,
@@ -56,7 +56,7 @@ namespace PuzzleAttack.Grid
             _gridHeight = gridHeight;
             _tileSize = tileSize;
             _swapDuration = swapDuration;
-            _dropDuration = dropDuration;
+            _dropSpeed = dropSpeed;
             _gridRiser = gridRiser;
             _matchDetector = matchDetector;
             _matchProcessor = matchProcessor;
@@ -408,7 +408,7 @@ namespace PuzzleAttack.Grid
             {
                 if (tile == null) continue;
                 var distance = Mathf.Abs(to.y - from.y);
-                maxCascadeDuration = Mathf.Max(maxCascadeDuration, _dropDuration * distance);
+                maxCascadeDuration = Mathf.Max(maxCascadeDuration, distance / _dropSpeed);
                 StartCoroutine(AnimateCascadeSmooth(tile, to));
             }
 
@@ -451,7 +451,7 @@ namespace PuzzleAttack.Grid
                 var currentPos = tile.transform.position;
                 var targetWorldY = newTarget.y * _tileSize + _gridRiser.CurrentGridOffset;
                 var distance = Mathf.Abs(currentPos.y - targetWorldY) / _tileSize;
-                maxRetargetDuration = Mathf.Max(maxRetargetDuration, _dropDuration * distance);
+                maxRetargetDuration = Mathf.Max(maxRetargetDuration, distance / _dropSpeed);
 
                 _droppingTiles.Add(tile);
                 _dropTargets[tile] = newTarget;
@@ -629,7 +629,7 @@ namespace PuzzleAttack.Grid
             var targetGridY = (float)currentTarget.y;
 
             var distance = Mathf.Abs(targetGridY - startGridY);
-            var duration = _dropDuration * distance;
+            var duration = distance / _dropSpeed;
             var elapsed = 0f;
             var previousOffset = _gridRiser.CurrentGridOffset;
 
@@ -693,7 +693,7 @@ namespace PuzzleAttack.Grid
             var targetGridY = (float)currentTarget.y;
 
             var distance = Mathf.Abs(targetGridY - startGridY);
-            var duration = _dropDuration * distance * 0.5f; // Quick nudge
+            var duration = distance / _dropSpeed * 0.5f; // Quick nudge
             var elapsed = 0f;
             var previousOffset = _gridRiser.CurrentGridOffset;
 
@@ -764,7 +764,7 @@ namespace PuzzleAttack.Grid
             var targetGridY = currentTarget.y;
 
             var distance = Mathf.Abs(startGridY - targetGridY);
-            var duration = _dropDuration * distance;
+            var duration = distance / _dropSpeed;
             var elapsed = 0f;
             var previousOffset = _gridRiser.CurrentGridOffset;
 
@@ -823,7 +823,7 @@ namespace PuzzleAttack.Grid
 
                                     startGridY = retargetGridY;
                                     targetGridY = currentTarget.y;
-                                    duration = _dropDuration * remaining;
+                                    duration = remaining / _dropSpeed;
                                     elapsed = 0;
 
                                     Debug.Log($"[Drop] Retargeted to ({currentTarget.x}, {currentTarget.y})");
