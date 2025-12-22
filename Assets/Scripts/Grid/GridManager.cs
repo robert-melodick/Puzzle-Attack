@@ -41,6 +41,9 @@ namespace PuzzleAttack.Grid
         private GameObject[,] _preloadGrid;
         private readonly HashSet<GameObject> _swappingTiles = new();
         private readonly HashSet<GameObject> _droppingTiles = new();
+        
+        // Track if we're currently in a DropTiles coroutine to prevent re-entry
+        private bool _isProcessingDrops;
 
         #endregion
 
@@ -142,6 +145,22 @@ namespace PuzzleAttack.Grid
         public bool IsTileSwapping(GameObject tile) => _swappingTiles.Contains(tile);
         public bool IsTileDropping(GameObject tile) => _droppingTiles.Contains(tile);
         public bool IsTileAnimating(GameObject tile) => _swappingTiles.Contains(tile) || _droppingTiles.Contains(tile);
+
+        /// <summary>
+        /// Check if any tile is currently dropping toward this cell.
+        /// </summary>
+        public bool IsCellTargetedByDrop(int x, int y)
+        {
+            return blockSlipManager.IsCellTargetedByDrop(x, y);
+        }
+
+        /// <summary>
+        /// Check if there are any active drops in progress.
+        /// </summary>
+        public bool HasActiveDrops()
+        {
+            return _droppingTiles.Count > 0;
+        }
 
         public void AddBreathingRoom(int tilesMatched) => gridRiser.AddBreathingRoom(tilesMatched);
 
@@ -298,6 +317,10 @@ namespace PuzzleAttack.Grid
                 FinalizeSwappedTile(leftTile);
                 FinalizeSwappedTile(rightTile);
 
+                // Remove from swapping set BEFORE checking drops
+                _swappingTiles.Remove(leftTile);
+                _swappingTiles.Remove(rightTile);
+
                 IsSwapping = false;
 
                 // Check for momentum (frozen tiles continue moving)
@@ -323,6 +346,7 @@ namespace PuzzleAttack.Grid
             }
             finally
             {
+                // Ensure cleanup even if coroutine is stopped
                 _swappingTiles.Remove(leftTile);
                 _swappingTiles.Remove(rightTile);
                 IsSwapping = false;
@@ -402,55 +426,122 @@ namespace PuzzleAttack.Grid
 
         public IEnumerator DropTiles()
         {
-            var drops = CollectDrops();
-            if (drops.Count == 0) yield break;
-
-            ValidateDropTargets(drops);
-            var maxDropDistance = ExecuteDrops(drops);
-
-            if (drops.Count > 0)
+            // Prevent re-entry - if we're already processing drops, skip
+            if (_isProcessingDrops)
             {
-                var waitTime = maxDropDistance / dropSpeed + 0.05f;
-                Debug.Log($"[DropTiles] Waiting {waitTime:F2}s for {drops.Count} drops");
-                yield return new WaitForSeconds(waitTime);
+                Debug.Log("[DropTiles] Already processing drops, skipping");
+                yield break;
             }
 
-            Debug.Log("[DropTiles] Complete");
+            _isProcessingDrops = true;
+
+            try
+            {
+                // Keep dropping until no more drops are needed
+                int iterations = 0;
+                const int maxIterations = 20; // Safety limit
+
+                while (iterations < maxIterations)
+                {
+                    iterations++;
+
+                    var drops = CollectDrops();
+                    if (drops.Count == 0) break;
+
+                    ValidateDropTargets(drops);
+                    var maxDropDistance = ExecuteDrops(drops);
+
+                    if (drops.Count > 0)
+                    {
+                        var waitTime = maxDropDistance / dropSpeed + 0.05f;
+                        Debug.Log($"[DropTiles] Iteration {iterations}: Waiting {waitTime:F2}s for {drops.Count} drops");
+                        yield return new WaitForSeconds(waitTime);
+                    }
+
+                    // Small delay between iterations to let animations fully settle
+                    yield return new WaitForSeconds(0.02f);
+                }
+
+                if (iterations >= maxIterations)
+                {
+                    Debug.LogWarning("[DropTiles] Hit max iterations limit!");
+                }
+
+                Debug.Log($"[DropTiles] Complete after {iterations} iteration(s)");
+            }
+            finally
+            {
+                _isProcessingDrops = false;
+            }
         }
 
         private List<(GameObject tile, Vector2Int from, Vector2Int to)> CollectDrops()
         {
             var drops = new List<(GameObject tile, Vector2Int from, Vector2Int to)>();
+            var pendingTargets = new HashSet<Vector2Int>(); // Track targets we're about to assign
 
             for (var x = 0; x < gridWidth; x++)
-            for (var y = 0; y < gridHeight; y++)
             {
-                if (_grid[x, y] != null) continue;
-
-                for (var aboveY = y + 1; aboveY < gridHeight; aboveY++)
+                // Process each column from bottom to top
+                for (var y = 0; y < gridHeight; y++)
                 {
-                    if (_grid[x, aboveY] == null) continue;
-
-                    var tile = _grid[x, aboveY];
-
-                    // Skip already dropping tiles
-                    if (_droppingTiles.Contains(tile))
+                    // Skip non-empty cells
+                    if (_grid[x, y] != null) continue;
+                    
+                    // Skip cells that already have a drop targeting them
+                    if (blockSlipManager.IsCellTargetedByDrop(x, y))
                     {
-                        Debug.Log($"[DropTiles] Tile at ({x}, {aboveY}) already dropping, stopping column search");
-                        break;
+                        Debug.Log($"[CollectDrops] Cell ({x},{y}) already targeted by active drop, skipping");
+                        continue;
                     }
 
-                    // Skip tiles being processed
-                    if (matchProcessor.IsTileBeingProcessed(x, aboveY))
+                    // Skip cells we're about to assign in this batch
+                    if (pendingTargets.Contains(new Vector2Int(x, y)))
                     {
-                        Debug.Log($"[DropTiles] Tile at ({x}, {aboveY}) being processed, stopping column search");
-                        break;
+                        continue;
                     }
 
-                    drops.Add((tile, new Vector2Int(x, aboveY), new Vector2Int(x, y)));
-                    _grid[x, y] = tile;
-                    _grid[x, aboveY] = null;
-                    break;
+                    // Find the first tile above that can drop
+                    for (var aboveY = y + 1; aboveY < gridHeight; aboveY++)
+                    {
+                        var tile = _grid[x, aboveY];
+                        if (tile == null) continue;
+
+                        // Skip tiles already dropping
+                        if (_droppingTiles.Contains(tile))
+                        {
+                            Debug.Log($"[CollectDrops] Tile at ({x},{aboveY}) already dropping, stopping column search");
+                            break;
+                        }
+
+                        // Skip tiles being swapped
+                        if (_swappingTiles.Contains(tile))
+                        {
+                            Debug.Log($"[CollectDrops] Tile at ({x},{aboveY}) is swapping, stopping column search");
+                            break;
+                        }
+
+                        // Skip tiles being processed for matches
+                        if (matchProcessor.IsTileBeingProcessed(x, aboveY))
+                        {
+                            Debug.Log($"[CollectDrops] Tile at ({x},{aboveY}) being processed, stopping column search");
+                            break;
+                        }
+
+                        // Found a tile to drop
+                        var from = new Vector2Int(x, aboveY);
+                        var to = new Vector2Int(x, y);
+
+                        drops.Add((tile, from, to));
+                        pendingTargets.Add(to);
+                        
+                        // Update grid immediately
+                        _grid[x, y] = tile;
+                        _grid[x, aboveY] = null;
+
+                        Debug.Log($"[CollectDrops] Tile {tile.name} will drop from ({from.x},{from.y}) to ({to.x},{to.y})");
+                        break;
+                    }
                 }
             }
 
@@ -463,7 +554,10 @@ namespace PuzzleAttack.Grid
             foreach (var (tile, from, to) in drops)
             {
                 if (targetMap.ContainsKey(to))
-                    Debug.LogError($"[DropTiles] CONFLICT: Multiple tiles targeting ({to.x}, {to.y})!");
+                {
+                    Debug.LogError($"[DropTiles] CONFLICT: Multiple tiles targeting ({to.x}, {to.y})! " +
+                                   $"Tiles: {targetMap[to].name} and {tile.name}");
+                }
                 targetMap[to] = tile;
             }
         }

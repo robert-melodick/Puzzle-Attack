@@ -33,6 +33,7 @@ public class BlockSlipDebugOverlay : MonoBehaviour
     [SerializeField] private Color whiteSlideUnder = Color.white;
     [SerializeField] private Color redBlocked = new Color(1f, 0.3f, 0.3f);
     [SerializeField] private Color greenNudge = new Color(0.3f, 1f, 0.3f);
+    [SerializeField] private Color cyanSwapWithFalling = new Color(0.3f, 1f, 1f);
     [SerializeField] private Color grayNoBlockSlip = new Color(0.5f, 0.5f, 0.5f);
     [SerializeField] private Color backgroundColor = new Color(0f, 0f, 0f, 0.8f);
     [SerializeField] private Color timelineBackground = new Color(0.2f, 0.2f, 0.2f, 0.9f);
@@ -62,6 +63,9 @@ public class BlockSlipDebugOverlay : MonoBehaviour
     private System.Reflection.FieldInfo _droppingTilesField;
     private System.Reflection.FieldInfo _dropTargetsField;
     private System.Reflection.FieldInfo _dropProgressField;
+    private System.Reflection.FieldInfo _swapWithFallingThresholdField;
+    private System.Reflection.FieldInfo _slideUnderBlockedThresholdField;
+    private System.Reflection.FieldInfo _quickNudgeThresholdField;
 
     #endregion
 
@@ -87,10 +91,11 @@ public class BlockSlipDebugOverlay : MonoBehaviour
 
     private enum BlockSlipOutcome
     {
-        NoBlockSlip,      // Gray - no falling blocks involved
-        SlideUnder,       // White - normal slide under
-        Blocked,          // Red - past 50% threshold
-        QuickNudge        // Green - cascade/nudge will occur
+        NoBlockSlip,        // Gray - no falling blocks involved
+        SlideUnder,         // White - normal slide under
+        Blocked,            // Red - past threshold, swap blocked
+        QuickNudge,         // Green - cascade/nudge will occur
+        SwapWithFalling     // Cyan - can swap directly with falling tile
     }
 
     #endregion
@@ -154,6 +159,9 @@ public class BlockSlipDebugOverlay : MonoBehaviour
         _droppingTilesField = type.GetField("_droppingTiles", flags);
         _dropTargetsField = type.GetField("_dropTargets", flags);
         _dropProgressField = type.GetField("_dropProgress", flags);
+        _swapWithFallingThresholdField = type.GetField("_swapWithFallingThreshold", flags);
+        _slideUnderBlockedThresholdField = type.GetField("_slideUnderBlockedThreshold", flags);
+        _quickNudgeThresholdField = type.GetField("_quickNudgeThreshold", flags);
     }
 
     private void CreateOverlayUI()
@@ -230,7 +238,8 @@ public class BlockSlipDebugOverlay : MonoBehaviour
         legendText.text = 
             "<color=#FFFFFF>■</color> Slide Under  " +
             "<color=#4CFF4C>■</color> Quick Nudge  " +
-            "<color=#FF4C4C>■</color> Blocked\n" +
+            "<color=#4CFFFF>■</color> Swap w/Fall\n" +
+            "<color=#FF4C4C>■</color> Blocked  " +
             "<color=#808080>■</color> No BlockSlip  " +
             "<color=#FFFF00>|</color> Current  " +
             "<color=#FF8000>|</color> Last Swap";
@@ -454,6 +463,7 @@ public class BlockSlipDebugOverlay : MonoBehaviour
             BlockSlipOutcome.SlideUnder => whiteSlideUnder,
             BlockSlipOutcome.Blocked => redBlocked,
             BlockSlipOutcome.QuickNudge => greenNudge,
+            BlockSlipOutcome.SwapWithFalling => cyanSwapWithFalling,
             _ => grayNoBlockSlip
         };
 
@@ -494,8 +504,12 @@ public class BlockSlipDebugOverlay : MonoBehaviour
         var tileWorldY = tile.transform.position.y;
         
         var swapRowWorldY = cursorY * _tileSize + offsetY;
-        var swapRowMidpoint = swapRowWorldY + _tileSize * 0.4f;
         var swapRowTop = swapRowWorldY + _tileSize;
+        
+        // Get thresholds from BlockSlipManager
+        var swapWithFallingThreshold = GetSwapWithFallingThreshold();
+        var slideUnderBlockedThreshold = GetSlideUnderBlockedThreshold();
+        var quickNudgeThreshold = GetQuickNudgeThreshold();
 
         // Check if tile is in the swap row
         bool isInSwapRow = tileWorldY >= swapRowWorldY && tileWorldY < swapRowTop;
@@ -510,11 +524,51 @@ public class BlockSlipDebugOverlay : MonoBehaviour
             return BlockSlipOutcome.NoBlockSlip;
         }
 
-        // Tile is in swap row - check threshold
-        if (tileWorldY < swapRowMidpoint)
-            return BlockSlipOutcome.Blocked; // Past 50% threshold
-        else
-            return BlockSlipOutcome.SlideUnder; // Can still slide under
+        // Tile is in swap row - determine outcome based on position
+        
+        // SwapWithFalling threshold: tile must be above (1 - threshold) point
+        // e.g., threshold 0.5 means tile center must be in row, so check if Y >= row + 0.5*tileSize
+        var swapWithFallingThresholdY = swapRowWorldY + _tileSize * (1f - swapWithFallingThreshold);
+        
+        // SlideUnder blocked threshold: if tile is below this, slide-under is blocked
+        var slideUnderBlockedY = swapRowWorldY + _tileSize * slideUnderBlockedThreshold;
+        
+        // QuickNudge threshold: tile must be above this for quick nudge
+        var quickNudgeY = swapRowWorldY + _tileSize * quickNudgeThreshold;
+
+        // Priority order of checks:
+        // 1. If above swapWithFalling threshold -> can swap directly with falling tile
+        if (tileWorldY >= swapWithFallingThresholdY)
+            return BlockSlipOutcome.SwapWithFalling;
+        
+        // 2. If above quickNudge threshold but below swapWithFalling -> quick nudge
+        if (tileWorldY >= quickNudgeY)
+            return BlockSlipOutcome.QuickNudge;
+        
+        // 3. If above slideUnderBlocked threshold -> can still slide under
+        if (tileWorldY >= slideUnderBlockedY)
+            return BlockSlipOutcome.SlideUnder;
+        
+        // 4. Below slideUnderBlocked threshold -> blocked
+        return BlockSlipOutcome.Blocked;
+    }
+
+    private float GetSwapWithFallingThreshold()
+    {
+        if (_swapWithFallingThresholdField == null || blockSlipManager == null) return 0.5f;
+        return (float)_swapWithFallingThresholdField.GetValue(blockSlipManager);
+    }
+
+    private float GetSlideUnderBlockedThreshold()
+    {
+        if (_slideUnderBlockedThresholdField == null || blockSlipManager == null) return 0.4f;
+        return (float)_slideUnderBlockedThresholdField.GetValue(blockSlipManager);
+    }
+
+    private float GetQuickNudgeThreshold()
+    {
+        if (_quickNudgeThresholdField == null || blockSlipManager == null) return 0.5f;
+        return (float)_quickNudgeThresholdField.GetValue(blockSlipManager);
     }
 
     #endregion

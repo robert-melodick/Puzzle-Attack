@@ -36,6 +36,26 @@ namespace PuzzleAttack.Grid
 
         #endregion
 
+        #region Tuning Parameters
+
+        [Header("BlockSlip Thresholds")]
+        [Tooltip("How much of the falling tile must be in the cursor row to allow swap (0.0-1.0). " +
+                 "0.5 = tile center must be in row, 0.3 = more forgiving (late input), 0.7 = stricter (early input)")]
+        [SerializeField, Range(0f, 1f)] 
+        private float _swapWithFallingThreshold = 0.5f;
+
+        [Tooltip("Threshold for blocking slide-under (original blockslip-too-late). " +
+                 "Lower = more forgiving for slide-under attempts.")]
+        [SerializeField, Range(0f, 1f)]
+        private float _slideUnderBlockedThreshold = 0.4f;
+
+        [Tooltip("Threshold for quick-nudge activation. Tile must be above this point in the row. " +
+                 "Higher = stricter (must catch earlier).")]
+        [SerializeField, Range(0f, 1f)]
+        private float _quickNudgeThreshold = 0.5f;
+
+        #endregion
+
         #region Initialization
 
         public void Initialize(
@@ -124,7 +144,21 @@ namespace PuzzleAttack.Grid
         }
 
         /// <summary>
-        /// Check if any falling block in the column has passed the 50% threshold.
+        /// Check if any tile is currently dropping toward this cell.
+        /// </summary>
+        public bool IsCellTargetedByDrop(int x, int y)
+        {
+            var targetPos = new Vector2Int(x, y);
+            foreach (var kvp in _dropTargets)
+            {
+                if (kvp.Key != null && kvp.Value == targetPos)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Check if any falling block in the column has passed the slide-under threshold.
         /// </summary>
         public bool IsBlockSlipTooLate(int columnX, int rowY)
         {
@@ -132,7 +166,7 @@ namespace PuzzleAttack.Grid
 
             var offsetY = _gridRiser?.CurrentGridOffset ?? 0f;
             var swapRowWorldY = rowY * _tileSize + offsetY;
-            var swapRowMidpoint = swapRowWorldY + _tileSize * 0.4f; // 10% buffer
+            var swapRowThreshold = swapRowWorldY + _tileSize * _slideUnderBlockedThreshold;
             var swapRowTop = swapRowWorldY + _tileSize;
 
             foreach (var tile in _droppingTiles)
@@ -142,9 +176,54 @@ namespace PuzzleAttack.Grid
                 if (target.y > rowY) continue;
 
                 var tileWorldY = tile.transform.position.y;
-                if (tileWorldY >= swapRowWorldY && tileWorldY < swapRowTop && tileWorldY < swapRowMidpoint)
+                if (tileWorldY >= swapRowWorldY && tileWorldY < swapRowTop && tileWorldY < swapRowThreshold)
                 {
-                    Debug.Log($"[BlockSlip] TOO LATE: Tile at Y:{tileWorldY:F2} past midpoint {swapRowMidpoint:F2}");
+                    Debug.Log($"[BlockSlip] TOO LATE: Tile at Y:{tileWorldY:F2} past threshold {swapRowThreshold:F2}");
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Try to swap an idle tile with a falling tile at cursor position.
+        /// Returns true if the swap was initiated.
+        /// </summary>
+        public bool TrySwapWithFallingTile(Vector2Int cursorPos)
+        {
+            var leftX = cursorPos.x;
+            var rightX = cursorPos.x + 1;
+            var y = cursorPos.y;
+
+            var leftTile = _grid[leftX, y];
+            var rightTile = _grid[rightX, y];
+
+            var leftScript = leftTile?.GetComponent<Tile>();
+            var rightScript = rightTile?.GetComponent<Tile>();
+
+            var leftFalling = leftScript != null && leftScript.IsFalling;
+            var rightFalling = rightScript != null && rightScript.IsFalling;
+            var leftIdle = leftScript == null || leftScript.IsIdle;
+            var rightIdle = rightScript == null || rightScript.IsIdle;
+
+            // Check for falling tile in cursor row that we can swap with
+            if (leftFalling && rightIdle && rightTile != null)
+            {
+                if (IsTileInSwapRange(leftTile, y))
+                {
+                    StartCoroutine(ExecuteSwapWithFalling(rightTile, leftTile, 
+                        new Vector2Int(rightX, y), new Vector2Int(leftX, y)));
+                    return true;
+                }
+            }
+
+            if (rightFalling && leftIdle && leftTile != null)
+            {
+                if (IsTileInSwapRange(rightTile, y))
+                {
+                    StartCoroutine(ExecuteSwapWithFalling(leftTile, rightTile,
+                        new Vector2Int(leftX, y), new Vector2Int(rightX, y)));
                     return true;
                 }
             }
@@ -161,9 +240,13 @@ namespace PuzzleAttack.Grid
             var rightX = cursorPos.x + 1;
             var y = cursorPos.y;
 
+            // First try to swap with falling tile directly
+            if (TrySwapWithFallingTile(cursorPos))
+                return true;
+
             if (IsBlockSlipTooLate(leftX, y) || IsBlockSlipTooLate(rightX, y))
             {
-                Debug.Log(">>> BLOCKSLIP BLOCKED - past 50% threshold <<<");
+                Debug.Log(">>> BLOCKSLIP BLOCKED - past slide-under threshold <<<");
                 return false;
             }
 
@@ -245,6 +328,349 @@ namespace PuzzleAttack.Grid
 
         #endregion
 
+        #region Swap With Falling Tile
+
+        /// <summary>
+        /// Check if a falling tile is within the swappable range of the cursor row.
+        /// </summary>
+        private bool IsTileInSwapRange(GameObject tile, int rowY)
+        {
+            if (tile == null) return false;
+
+            var offsetY = _gridRiser?.CurrentGridOffset ?? 0f;
+            var tileWorldY = tile.transform.position.y;
+            
+            var swapRowWorldY = rowY * _tileSize + offsetY;
+            var swapRowTop = swapRowWorldY + _tileSize;
+            
+            // Check if tile is in the row at all
+            if (tileWorldY < swapRowWorldY || tileWorldY >= swapRowTop)
+                return false;
+
+            // Check threshold - tile must be above threshold point to be swappable
+            var thresholdY = swapRowWorldY + _tileSize * (1f - _swapWithFallingThreshold);
+            
+            Debug.Log($"[SwapRange] Tile Y:{tileWorldY:F2}, Row:{swapRowWorldY:F2}-{swapRowTop:F2}, Threshold:{thresholdY:F2}, InRange:{tileWorldY >= thresholdY}");
+            
+            return tileWorldY >= thresholdY;
+        }
+
+        /// <summary>
+        /// Execute a swap between an idle tile and a falling tile.
+        /// The idle tile takes the falling tile's position in the stack.
+        /// Tiles above the falling tile get nudged up, tiles below continue falling.
+        /// </summary>
+        private IEnumerator ExecuteSwapWithFalling(GameObject idleTile, GameObject fallingTile,
+            Vector2Int idlePos, Vector2Int fallingPos)
+        {
+            _gridManager.SetIsSwapping(true);
+            Debug.Log($"[SwapWithFalling] START: Idle {idleTile.name} at ({idlePos.x},{idlePos.y}) <-> Falling {fallingTile.name} at grid ({fallingPos.x},{fallingPos.y})");
+
+            var fallingCol = fallingPos.x;
+            var swapRow = fallingPos.y;
+            var offsetY = _gridRiser?.CurrentGridOffset ?? 0f;
+            var swapRowWorldY = swapRow * _tileSize + offsetY;
+
+            // --- PHASE 1: Snapshot and categorize all tiles ---
+            
+            // Freeze all dropping tiles in this column to get consistent positions
+            var frozenPositions = new Dictionary<GameObject, float>();
+            foreach (var tile in _droppingTiles)
+            {
+                if (tile == null) continue;
+                if (!_dropTargets.TryGetValue(tile, out var target) || target.x != fallingCol) continue;
+                
+                frozenPositions[tile] = tile.transform.position.y;
+                _dropAnimVersions[tile] = GetVersion(tile) + 1; // Freeze animation
+            }
+
+            // Categorize: tiles that need to be nudged up vs tiles below that continue falling
+            var tilesToNudge = new List<(GameObject tile, Vector2Int gridPos, float worldY)>();
+            var tilesBelow = new List<(GameObject tile, Vector2Int target)>();
+
+            // First, add the falling tiles (excluding the one we're swapping with)
+            foreach (var tile in new List<GameObject>(_droppingTiles))
+            {
+                if (tile == null || tile == fallingTile) continue;
+                if (!_dropTargets.TryGetValue(tile, out var target) || target.x != fallingCol) continue;
+
+                var tileWorldY = frozenPositions.GetValueOrDefault(tile, tile.transform.position.y);
+
+                if (tileWorldY >= swapRowWorldY)
+                {
+                    // This tile is at or above the swap row - needs to be nudged
+                    tilesToNudge.Add((tile, target, tileWorldY));
+                    Debug.Log($"[SwapWithFalling] Falling tile to nudge: {tile.name} at worldY:{tileWorldY:F2}, target:({target.x},{target.y})");
+                }
+                else
+                {
+                    // This tile is below - continues falling
+                    tilesBelow.Add((tile, target));
+                    Debug.Log($"[SwapWithFalling] Falling tile below (continues): {tile.name} at worldY:{tileWorldY:F2}");
+                }
+            }
+
+            // Also find stationary tiles at or above the swap row in the falling column
+            for (var y = swapRow; y < _gridHeight; y++)
+            {
+                var tile = _grid[fallingCol, y];
+                if (tile == null || tile == fallingTile || tile == idleTile) continue;
+                if (tilesToNudge.Exists(t => t.tile == tile)) continue; // Already added as falling
+                if (_swappingTiles.Contains(tile)) continue;
+                
+                var tileWorldY = tile.transform.position.y;
+                tilesToNudge.Add((tile, new Vector2Int(fallingCol, y), tileWorldY));
+                Debug.Log($"[SwapWithFalling] Stationary tile to nudge: {tile.name} at grid ({fallingCol},{y})");
+            }
+
+            // Sort by world Y (lowest first) so we process from bottom to top
+            tilesToNudge.Sort((a, b) => a.worldY.CompareTo(b.worldY));
+
+            Debug.Log($"[SwapWithFalling] Total: {tilesToNudge.Count} tiles to nudge, {tilesBelow.Count} tiles below");
+
+            // --- PHASE 2: Check for grid overflow ---
+            var highestNudgeTarget = swapRow;
+            foreach (var (tile, gridPos, worldY) in tilesToNudge)
+            {
+                highestNudgeTarget++;
+            }
+            
+            if (highestNudgeTarget >= _gridHeight)
+            {
+                Debug.LogWarning($"[SwapWithFalling] Would overflow grid (need row {highestNudgeTarget}), aborting");
+                
+                // Unfreeze animations
+                foreach (var tile in frozenPositions.Keys)
+                {
+                    if (tile != null && _droppingTiles.Contains(tile))
+                    {
+                        var target = _dropTargets.GetValueOrDefault(tile, Vector2Int.zero);
+                        StartCoroutine(AnimateDrop(tile, tile.transform.position, target, true));
+                    }
+                }
+                
+                _gridManager.SetIsSwapping(false);
+                yield break;
+            }
+
+            // --- PHASE 3: Cancel drops for tiles being nudged ---
+            CancelDrop(fallingTile);
+            
+            foreach (var (tile, gridPos, worldY) in tilesToNudge)
+            {
+                CancelDrop(tile);
+            }
+
+            // --- PHASE 4: Update grid positions ---
+            
+            // Clear all old positions first
+            _grid[idlePos.x, idlePos.y] = null;
+            
+            // Clear the falling tile's grid position (it might be at its target, not swapRow)
+            var fallingTileGridPos = _gridManager.FindTilePosition(fallingTile);
+            if (fallingTileGridPos.HasValue)
+                _grid[fallingTileGridPos.Value.x, fallingTileGridPos.Value.y] = null;
+            
+            // Clear positions of tiles to be nudged
+            foreach (var (tile, gridPos, worldY) in tilesToNudge)
+            {
+                var actualPos = _gridManager.FindTilePosition(tile);
+                if (actualPos.HasValue)
+                    _grid[actualPos.Value.x, actualPos.Value.y] = null;
+            }
+
+            // Place the idle tile at the swap row
+            _grid[fallingCol, swapRow] = idleTile;
+            Debug.Log($"[SwapWithFalling] Placed idle tile at ({fallingCol},{swapRow})");
+            
+            // Place the falling tile at the idle position
+            _grid[idlePos.x, idlePos.y] = fallingTile;
+            Debug.Log($"[SwapWithFalling] Placed falling tile at ({idlePos.x},{idlePos.y})");
+
+            // Place nudged tiles at their new positions (each one row higher than previous)
+            var nextNudgeRow = swapRow + 1;
+            var nudgePlan = new List<(GameObject tile, Vector2Int newPos)>();
+            
+            foreach (var (tile, oldGridPos, worldY) in tilesToNudge)
+            {
+                var newPos = new Vector2Int(fallingCol, nextNudgeRow);
+                _grid[newPos.x, newPos.y] = tile;
+                nudgePlan.Add((tile, newPos));
+                Debug.Log($"[SwapWithFalling] Nudging {tile.name} to ({newPos.x},{newPos.y})");
+                nextNudgeRow++;
+            }
+
+            // --- PHASE 5: Mark tiles and start animations ---
+            
+            _swappingTiles.Add(idleTile);
+            _swappingTiles.Add(fallingTile);
+            foreach (var (tile, newPos) in nudgePlan)
+                _swappingTiles.Add(tile);
+
+            // Start swap animations
+            var idleTileScript = idleTile.GetComponent<Tile>();
+            var fallingTileScript = fallingTile.GetComponent<Tile>();
+
+            idleTileScript?.StartSwapping(new Vector2Int(fallingCol, swapRow));
+            fallingTileScript?.StartSwapping(idlePos);
+
+            StartCoroutine(AnimateSwap(idleTile, new Vector2Int(fallingCol, swapRow)));
+            StartCoroutine(AnimateSwap(fallingTile, idlePos));
+
+            // Start nudge animations
+            var maxNudgeDuration = 0f;
+            foreach (var (tile, newPos) in nudgePlan)
+            {
+                var ts = tile.GetComponent<Tile>();
+                ts?.Initialize(newPos.x, newPos.y, ts.TileType, _gridManager);
+                
+                StartCoroutine(AnimateCascadeSmooth(tile, newPos));
+                
+                var startY = tile.transform.position.y;
+                var endY = newPos.y * _tileSize + offsetY;
+                var distance = Mathf.Abs(endY - startY) / _tileSize;
+                maxNudgeDuration = Mathf.Max(maxNudgeDuration, distance / _dropSpeed);
+            }
+
+            // Unfreeze tiles below - they continue their drops
+            foreach (var (tile, target) in tilesBelow)
+            {
+                if (tile == null || !_droppingTiles.Contains(tile)) continue;
+                
+                var currentPos = tile.transform.position;
+                _dropAnimVersions[tile] = GetVersion(tile) + 1;
+                StartCoroutine(AnimateDrop(tile, currentPos, target, true));
+            }
+
+            // --- PHASE 6: Wait for swap animation only ---
+            yield return new WaitForSeconds(_swapDuration);
+
+            // --- PHASE 7: Finalize positions ---
+            
+            // Finalize idle tile (now in falling column at swap row)
+            if (idleTile != null)
+            {
+                var finalOffsetY = _gridRiser?.CurrentGridOffset ?? 0f;
+                idleTileScript?.Initialize(fallingCol, swapRow, idleTileScript.TileType, _gridManager);
+                idleTileScript?.FinishMovement();
+                idleTile.transform.position = new Vector3(
+                    fallingCol * _tileSize,
+                    swapRow * _tileSize + finalOffsetY,
+                    0);
+                
+                // Verify grid consistency
+                if (_grid[fallingCol, swapRow] != idleTile)
+                {
+                    Debug.LogError($"[SwapWithFalling] DESYNC: Grid at ({fallingCol},{swapRow}) is not idleTile! Fixing...");
+                    _grid[fallingCol, swapRow] = idleTile;
+                }
+            }
+
+            // Finalize falling tile (now in idle column)
+            if (fallingTile != null)
+            {
+                var finalOffsetY = _gridRiser?.CurrentGridOffset ?? 0f;
+                fallingTileScript?.Initialize(idlePos.x, idlePos.y, fallingTileScript.TileType, _gridManager);
+                fallingTileScript?.FinishMovement();
+                fallingTile.transform.position = new Vector3(
+                    idlePos.x * _tileSize,
+                    idlePos.y * _tileSize + finalOffsetY,
+                    0);
+            }
+
+            // --- PHASE 8: Cleanup ---
+            _swappingTiles.Remove(idleTile);
+            _swappingTiles.Remove(fallingTile);
+            // Note: nudged tiles are removed from _swappingTiles in AnimateCascadeSmooth's finally block
+
+            _gridManager.SetIsSwapping(false);
+
+            // --- PHASE 9: Post-swap drop checks (non-blocking) ---
+            
+            // Check if swapped tiles need to drop - initiate drops but don't wait
+            CheckAndStartDrop(idleTile, fallingCol, swapRow);
+            CheckAndStartDrop(fallingTile, idlePos.x, idlePos.y);
+
+            // Trigger general drop logic without waiting for completion
+            // This allows the game to continue while drops animate
+            _gridManager.StartCoroutine(_gridManager.DropTiles());
+
+            // Check for matches (will run after drops complete due to DropTiles' internal logic)
+            var matches = _matchDetector.GetAllMatches();
+            if (matches.Count > 0 && !_matchProcessor.IsProcessingMatches)
+                _gridManager.StartCoroutine(_matchProcessor.ProcessMatches(matches));
+            
+            Debug.Log("[SwapWithFalling] COMPLETE");
+        }
+
+        /// <summary>
+        /// Check if a tile needs to drop after being placed, and initiate drop if needed.
+        /// Non-blocking version - just starts the drop, doesn't wait.
+        /// </summary>
+        private void CheckAndStartDrop(GameObject tile, int x, int y)
+        {
+            if (tile == null) return;
+            if (_droppingTiles.Contains(tile)) return;
+
+            // Find lowest empty position or position above a dropping tile
+            var targetY = y;
+            
+            for (var checkY = y - 1; checkY >= 0; checkY--)
+            {
+                var below = _grid[x, checkY];
+                
+                if (below == null)
+                {
+                    targetY = checkY;
+                }
+                else if (_droppingTiles.Contains(below))
+                {
+                    // There's a dropping tile below - we should drop to just above its target
+                    if (_dropTargets.TryGetValue(below, out var belowTarget))
+                    {
+                        targetY = belowTarget.y + 1;
+                    }
+                    break;
+                }
+                else
+                {
+                    // Solid tile below
+                    break;
+                }
+            }
+
+            if (targetY < y)
+            {
+                Debug.Log($"[CheckAndStartDrop] {tile.name} needs to drop from ({x},{y}) to ({x},{targetY})");
+                
+                // Update grid
+                _grid[x, y] = null;
+                _grid[x, targetY] = tile;
+
+                var ts = tile.GetComponent<Tile>();
+                ts?.Initialize(x, targetY, ts.TileType, _gridManager);
+
+                BeginDrop(tile, new Vector2Int(x, y), new Vector2Int(x, targetY));
+            }
+        }
+
+        /// <summary>
+        /// Cancel an active drop animation for a tile.
+        /// </summary>
+        private void CancelDrop(GameObject tile)
+        {
+            if (tile == null) return;
+            
+            _droppingTiles.Remove(tile);
+            _dropProgress.Remove(tile);
+            _dropTargets.Remove(tile);
+            _dropAnimVersions[tile] = GetVersion(tile) + 1;
+            
+            tile.GetComponent<Tile>()?.FinishMovement();
+        }
+
+        #endregion
+
         #region BlockSlip Core
 
         private bool FindFallingBlockInColumn(int columnX, int rowY, out GameObject fallingBlock)
@@ -302,7 +728,7 @@ namespace PuzzleAttack.Grid
             var processedBlocks = new HashSet<GameObject>();
 
             var swapRowWorldY = row * _tileSize + _gridRiser.CurrentGridOffset;
-            var swapRowMidpoint = swapRowWorldY + _tileSize * 0.4f;
+            var swapRowQuickNudgeThreshold = swapRowWorldY + _tileSize * _quickNudgeThreshold;
 
             // Snapshot falling block positions
             var snapshotPositions = new Dictionary<GameObject, float>();
@@ -331,7 +757,7 @@ namespace PuzzleAttack.Grid
 
                 if (isInSwapRow)
                 {
-                    if (tileWorldY < swapRowMidpoint)
+                    if (tileWorldY < swapRowQuickNudgeThreshold)
                         blocksToRetarget.Add((t, target));
                     else
                     {
@@ -367,21 +793,13 @@ namespace PuzzleAttack.Grid
             foreach (var (tile, from, to) in blocksToNudgeUp)
             {
                 if (tile == null) continue;
-                _droppingTiles.Remove(tile);
-                _dropProgress.Remove(tile);
-                _dropTargets.Remove(tile);
-                _dropAnimVersions[tile] = GetVersion(tile) + 1;
-                tile.GetComponent<Tile>()?.FinishMovement();
+                CancelDrop(tile);
             }
 
             // Cancel falling block's drop if tracked
             if (fallingBlock != null && _droppingTiles.Contains(fallingBlock))
             {
-                _droppingTiles.Remove(fallingBlock);
-                _dropProgress.Remove(fallingBlock);
-                _dropTargets.Remove(fallingBlock);
-                _dropAnimVersions[fallingBlock] = GetVersion(fallingBlock) + 1;
-                fallingBlock.GetComponent<Tile>()?.FinishMovement();
+                CancelDrop(fallingBlock);
             }
 
             // Update grid: clear old positions
@@ -455,7 +873,7 @@ namespace PuzzleAttack.Grid
 
                 _droppingTiles.Add(tile);
                 _dropTargets[tile] = newTarget;
-                StartCoroutine(AnimateDrop(tile, currentPos, newTarget, false));
+                StartCoroutine(AnimateDrop(tile, currentPos, newTarget, true));
             }
 
             // Wait for all animations
@@ -468,6 +886,7 @@ namespace PuzzleAttack.Grid
             {
                 var ts = swappingBlock.GetComponent<Tile>();
                 ts?.Initialize(col, row, ts.TileType, _gridManager);
+                ts?.FinishMovement();
                 swappingBlock.transform.position = new Vector3(
                     col * _tileSize,
                     row * _tileSize + _gridRiser.CurrentGridOffset,
@@ -512,12 +931,8 @@ namespace PuzzleAttack.Grid
             // Stop all falling blocks
             foreach (var (tile, gridPos) in fallingAbove)
             {
-                _droppingTiles.Remove(tile);
-                _dropProgress.Remove(tile);
-                _dropTargets.Remove(tile);
-                _dropAnimVersions[tile] = GetVersion(tile) + 1;
+                CancelDrop(tile);
                 _swappingTiles.Add(tile);
-                tile.GetComponent<Tile>()?.FinishMovement();
             }
 
             // Cascade blocks upward
@@ -772,6 +1187,13 @@ namespace PuzzleAttack.Grid
             {
                 while (elapsed < duration && tile != null && _droppingTiles.Contains(tile))
                 {
+                    // Check version - if we've been superseded, exit
+                    if (_dropAnimVersions.TryGetValue(tile, out var currentVersion) && currentVersion != myVersion)
+                    {
+                        Debug.Log($"[AnimateDrop] Version mismatch for {tile.name}: {myVersion} vs {currentVersion}, exiting");
+                        yield break;
+                    }
+
                     // Detect row spawn
                     var currentOffset = _gridRiser.CurrentGridOffset;
                     if (currentOffset < previousOffset - (_tileSize * 0.5f))
@@ -846,6 +1268,29 @@ namespace PuzzleAttack.Grid
                 // Finalize position
                 if (tile != null && _dropAnimVersions.TryGetValue(tile, out var latestVersion) && latestVersion == myVersion)
                 {
+                    // Verify grid consistency before finalizing
+                    var gridOccupant = _grid[currentTarget.x, currentTarget.y];
+                    if (gridOccupant != null && gridOccupant != tile)
+                    {
+                        Debug.LogError($"[AnimateDrop] DESYNC PREVENTED: {tile.name} tried to finalize at ({currentTarget.x},{currentTarget.y}) " +
+                                       $"but cell is occupied by {gridOccupant.name}! Finding correct position...");
+                        
+                        // Try to find where this tile actually belongs in the grid
+                        var actualPos = _gridManager.FindTilePosition(tile);
+                        if (actualPos.HasValue)
+                        {
+                            currentTarget = actualPos.Value;
+                            Debug.Log($"[AnimateDrop] Found {tile.name} at grid ({currentTarget.x},{currentTarget.y}), using that position");
+                        }
+                        else
+                        {
+                            Debug.LogError($"[AnimateDrop] {tile.name} is not in grid at all! Orphaned tile detected.");
+                            // Don't finalize - tile is orphaned
+                            if (sr != null) sr.sortingOrder = originalSortOrder;
+                            yield break;
+                        }
+                    }
+
                     tile.transform.position = new Vector3(
                         currentTarget.x * _tileSize,
                         currentTarget.y * _tileSize + _gridRiser.CurrentGridOffset,
