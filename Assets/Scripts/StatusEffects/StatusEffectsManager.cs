@@ -33,7 +33,16 @@ namespace PuzzleAttack.Grid
         private GridManager _gridManager;
         private MatchDetector _matchDetector;
         private readonly Dictionary<GameObject, GameObject> _effectVisuals = new();
+        
+        // Poison Variables
         private float _poisonSpreadTimer;
+        
+        // Fire Variables
+        private float _fireSpreadTimer;
+        private float _igniteHealth;
+        
+        // Ice Variables
+        private float _iceSlideSpeed;
 
         #endregion
 
@@ -55,6 +64,7 @@ namespace PuzzleAttack.Grid
 
             TickAllStatuses();
             HandlePoisonSpreading();
+            HandleFireSpreading();
         }
 
         private void TickAllStatuses()
@@ -118,6 +128,11 @@ namespace PuzzleAttack.Grid
                 var tile = tileObj.GetComponent<Tile>();
                 ApplyStatus(tile, TileStatus.Poisoned);
             }
+        }
+
+        private void HandleFireSpreading()
+        {
+            // if a tile is on fire, deplete igniteHealth on all tiles surrounding the burning tiles
         }
 
         #endregion

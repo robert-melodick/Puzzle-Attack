@@ -20,6 +20,7 @@ public class Debugger : MonoBehaviour
     [SerializeField] private MatchProcessor matchProcessor;
     [SerializeField] private ScoreManager scoreManager;
     [SerializeField] private GameStateManager gameStateManager;
+    [SerializeField] private GarbageManager garbageManager;
 
     [Header("UI Settings")]
     [SerializeField] private GameObject debugPanel;
@@ -101,6 +102,7 @@ public class Debugger : MonoBehaviour
         // Time scale controls (available in DEBUG builds)
         #if DEBUG || UNITY_EDITOR
         HandleTimeScaleControls();
+        HandleGarbageControls();
         #endif
 
         // Update FPS tracking
@@ -239,6 +241,14 @@ public class Debugger : MonoBehaviour
             }
         }
         
+    }
+
+    void HandleGarbageControls()
+    {
+        if (Input.GetKeyDown(KeyCode.Keypad1))
+        {
+            garbageManager.QueueGarbage(1,1);
+        }
     }
 
     void UpdateFPSTracking()

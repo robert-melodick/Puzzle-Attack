@@ -33,7 +33,12 @@ namespace PuzzleAttack.Grid
         private bool _isProcessingGarbage;
 
         #endregion
-
+        
+        #region Public Properties
+        public bool IsProcessingGarbage() => _isProcessingGarbage;
+        
+        #endregion
+        
         #region Initialization
 
         public void Initialize(GridManager gridManager, TileSpawner tileSpawner, 

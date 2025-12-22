@@ -32,6 +32,7 @@ namespace PuzzleAttack.Grid
         public MatchProcessor matchProcessor;
         public TileSpawner tileSpawner;
         public BlockSlipManager blockSlipManager;
+        public GarbageManager garbageManager;
 
         #endregion
 
@@ -74,9 +75,11 @@ namespace PuzzleAttack.Grid
 
             CleanupNullTiles();
             blockSlipManager.CleanupTracking();
+            ProcessGarbage();
             cursorController.HandleInput();
             HandleSwapInput();
             gridRiser.DisplayDebugInfo();
+            
         }
 
         #endregion
@@ -101,6 +104,8 @@ namespace PuzzleAttack.Grid
             blockSlipManager.Initialize(this, _grid, gridWidth, gridHeight, tileSize,
                 swapDuration, dropSpeed, gridRiser, matchDetector, matchProcessor,
                 cursorController, _swappingTiles, _droppingTiles);
+            
+            garbageManager.Initialize(this, tileSpawner, matchDetector, gridRiser);
         }
 
         private IEnumerator InitializeGrid()
@@ -579,6 +584,21 @@ namespace PuzzleAttack.Grid
             }
 
             return maxDistance;
+        }
+
+        #endregion
+        
+        #region Garbage Management
+
+        private void ProcessGarbage()
+        {
+            if (garbageManager.GetPendingGarbageCount() > 0 
+                && !garbageManager.IsProcessingGarbage()
+                && !matchProcessor.IsProcessingMatches
+                && !HasActiveDrops())
+            {
+                garbageManager.DropPendingGarbage();
+            }
         }
 
         #endregion
