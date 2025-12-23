@@ -6,7 +6,7 @@ namespace PuzzleAttack.Grid
 {
     /// <summary>
     /// Processes matches: blink animation, scoring, popping, and cascade handling.
-    /// Notifies adjacent tiles (for status effect curing and garbage conversion).
+    /// Notifies adjacent tiles (for status effect curing) and garbage blocks (for conversion).
     /// </summary>
     public class MatchProcessor : MonoBehaviour
     {
@@ -17,8 +17,9 @@ namespace PuzzleAttack.Grid
         public float blinkSpeed = 0.15f;
         public float delayBetweenPops = 1.5f;
 
+        [Header("References")]
         public ScoreManager scoreManager;
-        public bool isProcessingMatches;
+        public GarbageManager garbageManager;
 
         #endregion
 
@@ -28,12 +29,13 @@ namespace PuzzleAttack.Grid
         private GameObject[,] _grid;
         private MatchDetector _matchDetector;
         private readonly HashSet<Vector2Int> _processingTiles = new();
+        private bool _isProcessingMatches;
 
         #endregion
 
         #region Properties
 
-        public bool IsProcessingMatches => isProcessingMatches;
+        public bool IsProcessingMatches => _isProcessingMatches;
 
         #endregion
 
@@ -60,7 +62,7 @@ namespace PuzzleAttack.Grid
         /// </summary>
         public IEnumerator CheckAndClearMatches()
         {
-            isProcessingMatches = true;
+            _isProcessingMatches = true;
             var matchGroups = _matchDetector.GetMatchGroups();
 
             while (matchGroups.Count > 0)
@@ -70,7 +72,7 @@ namespace PuzzleAttack.Grid
             }
 
             scoreManager?.ResetCombo();
-            isProcessingMatches = false;
+            _isProcessingMatches = false;
         }
 
         /// <summary>
@@ -80,7 +82,7 @@ namespace PuzzleAttack.Grid
         {
             if (matches.Count == 0) yield break;
 
-            isProcessingMatches = true;
+            _isProcessingMatches = true;
             var matchGroups = _matchDetector.GroupMatchedTiles(matches);
 
             yield return StartCoroutine(ProcessMatchGroups(matchGroups));
@@ -98,7 +100,7 @@ namespace PuzzleAttack.Grid
             else
             {
                 scoreManager?.ResetCombo();
-                isProcessingMatches = false;
+                _isProcessingMatches = false;
             }
         }
 
@@ -108,13 +110,23 @@ namespace PuzzleAttack.Grid
 
         private IEnumerator ProcessMatchGroups(List<List<GameObject>> matchGroups)
         {
+            // Collect all match positions for garbage notification
+            var allMatchPositions = new List<Vector2Int>();
+
             // Mark all tiles as processing
             foreach (var group in matchGroups)
-            foreach (var tile in group)
             {
-                if (tile == null) continue;
-                var ts = tile.GetComponent<Tile>();
-                _processingTiles.Add(new Vector2Int(ts.GridX, ts.GridY));
+                foreach (var tile in group)
+                {
+                    if (tile == null) continue;
+                    var ts = tile.GetComponent<Tile>();
+                    if (ts != null)
+                    {
+                        var pos = new Vector2Int(ts.GridX, ts.GridY);
+                        _processingTiles.Add(pos);
+                        allMatchPositions.Add(pos);
+                    }
+                }
             }
 
             // Collect all tiles for blinking
@@ -124,6 +136,12 @@ namespace PuzzleAttack.Grid
 
             // Notify adjacent tiles before processing (for status effect curing)
             NotifyAdjacentTiles(allMatchedTiles);
+
+            // Notify garbage manager of adjacent matches
+            if (garbageManager != null && allMatchPositions.Count > 0)
+            {
+                garbageManager.OnMatchAdjacentToGarbage(allMatchPositions);
+            }
 
             yield return StartCoroutine(BlinkTiles(allMatchedTiles, processMatchDuration));
 
@@ -153,6 +171,15 @@ namespace PuzzleAttack.Grid
 
             _processingTiles.Clear();
 
+            // Wait for garbage conversion to complete before dropping
+            if (garbageManager != null)
+            {
+                while (garbageManager.IsProcessingConversion)
+                {
+                    yield return null;
+                }
+            }
+
             yield return StartCoroutine(_gridManager.DropTiles());
         }
 
@@ -174,14 +201,18 @@ namespace PuzzleAttack.Grid
                 {
                     if (adjacent == null || matchedTiles.Contains(adjacent)) continue;
 
+                    // Check if it's a regular tile
                     var adjTs = adjacent.GetComponent<Tile>();
-                    if (adjTs == null) continue;
+                    if (adjTs != null)
+                    {
+                        var pos = new Vector2Int(adjTs.GridX, adjTs.GridY);
+                        if (notifiedPositions.Contains(pos)) continue;
 
-                    var pos = new Vector2Int(adjTs.GridX, adjTs.GridY);
-                    if (notifiedPositions.Contains(pos)) continue;
+                        adjTs.OnAdjacentMatch();
+                        notifiedPositions.Add(pos);
+                    }
 
-                    adjTs.OnAdjacentMatch();
-                    notifiedPositions.Add(pos);
+                    // Note: Garbage notification is handled separately via GarbageManager
                 }
             }
         }

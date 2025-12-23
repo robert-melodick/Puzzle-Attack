@@ -20,7 +20,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: GBA_Sprite_Mat
+  m_Name: GBA_Sprite_Base_Mat
   m_Shader: {fileID: 4800000, guid: eea032393267ab847ae3b386a7344b88, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -114,7 +114,7 @@ Material:
     - _DetailNormalMapScale: 1
     - _DissolveAmount: 0
     - _DissolveEdgeWidth: 0.02
-    - _DitherStrength: 1
+    - _DitherStrength: 0.5
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EnvironmentReflections: 1
@@ -124,7 +124,7 @@ Material:
     - _Glossiness: 0
     - _GlossyReflections: 0
     - _HueShift: 0
-    - _Levels: 64
+    - _Levels: 31
     - _Metallic: 0
     - _MosaicBlocks: 1
     - _OcclusionStrength: 1

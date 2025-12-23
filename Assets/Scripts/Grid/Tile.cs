@@ -4,7 +4,10 @@ namespace PuzzleAttack.Grid
 {
     /// <summary>
     /// Core tile component. Holds grid position, type, movement state, and status effects.
+    /// Uses SpriteEffects2D for visual feedback.
+    /// Note: Garbage blocks are now handled by GarbageBlock component, not Tile.
     /// </summary>
+    [RequireComponent(typeof(SpriteRenderer))]
     public class Tile : MonoBehaviour
     {
         public enum MovementState { Idle, Swapping, Falling }
@@ -37,18 +40,13 @@ namespace PuzzleAttack.Grid
         public bool HasStatus => CurrentStatus != TileStatus.None;
         public float StatusTimer { get; private set; }
 
-        // Special tile flags
-        public bool IsGarbage { get; private set; }
-        public int GarbageWidth { get; private set; } = 1;
-        public int GarbageHeight { get; private set; } = 1;
-
         #endregion
 
         #region Private Fields
 
         private GridManager _gridManager;
         private AudioSource _audioSource;
-        private GameObject _statusVisual;
+        private SpriteEffects2D _effects;
 
         #endregion
 
@@ -58,6 +56,13 @@ namespace PuzzleAttack.Grid
         {
             _audioSource = gameObject.AddComponent<AudioSource>();
             _audioSource.playOnAwake = false;
+            
+            // Add SpriteEffects2D if not present
+            _effects = GetComponent<SpriteEffects2D>();
+            if (_effects == null)
+            {
+                _effects = gameObject.AddComponent<SpriteEffects2D>();
+            }
         }
 
         #endregion
@@ -70,18 +75,6 @@ namespace PuzzleAttack.Grid
             GridY = y;
             TileType = type;
             _gridManager = manager;
-            TargetGridPos = new Vector2Int(x, y);
-        }
-
-        public void InitializeAsGarbage(int x, int y, int width, int height, GridManager manager)
-        {
-            GridX = x;
-            GridY = y;
-            TileType = -1; // Garbage uses special type
-            _gridManager = manager;
-            IsGarbage = true;
-            GarbageWidth = width;
-            GarbageHeight = height;
             TargetGridPos = new Vector2Int(x, y);
         }
 
@@ -122,8 +115,6 @@ namespace PuzzleAttack.Grid
         /// </summary>
         public bool CanSwap()
         {
-            if (IsGarbage) return false;
-            
             return CurrentStatus switch
             {
                 TileStatus.Frozen => false,
@@ -137,8 +128,6 @@ namespace PuzzleAttack.Grid
         /// </summary>
         public bool CanMatch()
         {
-            if (IsGarbage) return false;
-            
             return CurrentStatus switch
             {
                 TileStatus.Burning => false, // Must be cured first
@@ -189,34 +178,87 @@ namespace PuzzleAttack.Grid
             {
                 ClearStatus();
             }
-            
-            // Garbage blocks convert to normal tiles when matched adjacent
-            if (IsGarbage)
-            {
-                ConvertFromGarbage();
-            }
-        }
-
-        private void ConvertFromGarbage()
-        {
-            IsGarbage = false;
-            GarbageWidth = 1;
-            GarbageHeight = 1;
-            // Type will be assigned by the system that handles garbage conversion
         }
 
         private void UpdateStatusVisual()
         {
-            // Status visual implementation - overlay sprite or particle effect
-            // Placeholder for visual feedback system
+            if (_effects == null) return;
+
+            switch (CurrentStatus)
+            {
+                case TileStatus.Frozen:
+                    _effects.SetTint(new Color(0.5f, 0.8f, 1f, 1f), 0.4f, SpriteEffects2D.TintMode.Multiply);
+                    _effects.SetWobble(true, 0.003f); // Subtle shimmer
+                    break;
+                    
+                case TileStatus.Burning:
+                    _effects.SetTint(new Color(1f, 0.3f, 0f, 1f), 0.5f, SpriteEffects2D.TintMode.Additive);
+                    _effects.SetWobble(true, 0.005f); // Fire flicker
+                    break;
+                    
+                case TileStatus.Poisoned:
+                    _effects.SetTint(new Color(0.4f, 0.8f, 0.2f, 1f), 0.4f, SpriteEffects2D.TintMode.Multiply);
+                    _effects.SetWobble(true, 0.002f);
+                    break;
+                    
+                case TileStatus.Locked:
+                    _effects.SetTint(new Color(0.5f, 0.5f, 0.5f, 1f), 0.6f, SpriteEffects2D.TintMode.Multiply);
+                    _effects.SetSaturation(0.3f); // Desaturate
+                    break;
+                    
+                case TileStatus.Charged:
+                    _effects.SetTint(new Color(1f, 1f, 0.5f, 1f), 0.3f, SpriteEffects2D.TintMode.Additive);
+                    _effects.SetWobble(true, 0.004f);
+                    break;
+                    
+                case TileStatus.None:
+                default:
+                    ClearStatusVisual();
+                    break;
+            }
         }
 
         private void ClearStatusVisual()
         {
-            if (_statusVisual != null)
+            if (_effects == null) return;
+            
+            _effects.ClearTint();
+            _effects.ClearWave();
+            _effects.SetSaturation(1f);
+        }
+
+        #endregion
+
+        #region Visual Effects (Public API)
+
+        /// <summary>
+        /// Get the SpriteEffects2D component for external effect control.
+        /// </summary>
+        public SpriteEffects2D Effects => _effects;
+
+        /// <summary>
+        /// Apply a flash effect (useful for match feedback).
+        /// </summary>
+        public void Flash(Color color, float duration = 0.1f)
+        {
+            _effects?.ApplyFlash(color, duration);
+        }
+
+        /// <summary>
+        /// Set highlight state (for cursor selection, etc).
+        /// </summary>
+        public void SetHighlight(bool highlighted, Color highlightColor = default)
+        {
+            if (_effects == null) return;
+
+            if (highlighted)
             {
-                Destroy(_statusVisual);
-                _statusVisual = null;
+                var color = highlightColor == default ? Color.white : highlightColor;
+                _effects.SetOutline(true, color, 0.02f);
+            }
+            else
+            {
+                _effects.ClearOutline();
             }
         }
 

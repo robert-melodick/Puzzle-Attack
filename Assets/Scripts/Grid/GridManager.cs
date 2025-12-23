@@ -7,6 +7,7 @@ namespace PuzzleAttack.Grid
     /// <summary>
     /// Central grid coordinator. Manages tile array, swap requests, and drop logic.
     /// Delegates animation to TileAnimator and movement logic to BlockSlipManager.
+    /// Integrates with GarbageManager for garbage block handling.
     /// </summary>
     public class GridManager : MonoBehaviour
     {
@@ -79,7 +80,6 @@ namespace PuzzleAttack.Grid
             cursorController.HandleInput();
             HandleSwapInput();
             gridRiser.DisplayDebugInfo();
-            
         }
 
         #endregion
@@ -184,17 +184,42 @@ namespace PuzzleAttack.Grid
         }
 
         /// <summary>
-        /// Check if a tile at position can be swapped (considering status effects).
+        /// Check if a tile at position can be swapped (considering status effects and garbage).
         /// </summary>
         public bool CanTileSwap(int x, int y)
         {
-            var tile = _grid[x, y];
-            if (tile == null) return true; // Empty space can always "swap"
+            var cell = _grid[x, y];
+            if (cell == null) return true; // Empty space can always "swap"
             
-            var tileScript = tile.GetComponent<Tile>();
+            // Check if it's garbage
+            var garbageRef = cell.GetComponent<GarbageReference>();
+            if (garbageRef != null) return false; // Can't swap garbage
+            
+            var garbageBlock = cell.GetComponent<GarbageBlock>();
+            if (garbageBlock != null) return false; // Can't swap garbage
+            
+            var tileScript = cell.GetComponent<Tile>();
             if (tileScript == null) return true;
             
             return tileScript.CanSwap();
+        }
+
+        /// <summary>
+        /// Check if a cell contains garbage.
+        /// </summary>
+        public bool IsGarbageAt(int x, int y)
+        {
+            if (x < 0 || x >= gridWidth || y < 0 || y >= gridHeight) return false;
+            return garbageManager.IsGarbageAt(x, y);
+        }
+
+        /// <summary>
+        /// Get the garbage block at a position (if any).
+        /// </summary>
+        public GarbageBlock GetGarbageAt(int x, int y)
+        {
+            if (x < 0 || x >= gridWidth || y < 0 || y >= gridHeight) return null;
+            return garbageManager.GetGarbageAt(x, y);
         }
 
         #endregion
@@ -215,6 +240,13 @@ namespace PuzzleAttack.Grid
 
             var leftTile = _grid[leftX, y];
             var rightTile = _grid[rightX, y];
+
+            // Garbage check - can't swap garbage
+            if (IsGarbageAt(leftX, y) || IsGarbageAt(rightX, y))
+            {
+                Debug.Log(">>> SWAP BLOCKED - garbage in cursor <<<");
+                return;
+            }
 
             // Status effect check
             if (!CanTileSwap(leftX, y) || !CanTileSwap(rightX, y))
@@ -250,6 +282,14 @@ namespace PuzzleAttack.Grid
             if (!IsTileActive(leftTile) || !IsTileActive(rightTile))
             {
                 Debug.Log(">>> SWAP BLOCKED - tiles not yet active <<<");
+                return;
+            }
+
+            // Held tile check (during garbage conversion)
+            if ((leftTile != null && garbageManager.IsTileHeld(leftTile)) ||
+                (rightTile != null && garbageManager.IsTileHeld(rightTile)))
+            {
+                Debug.Log(">>> SWAP BLOCKED - tiles held during garbage conversion <<<");
                 return;
             }
 
@@ -366,6 +406,8 @@ namespace PuzzleAttack.Grid
             if (!pos.HasValue) return;
 
             var tile = tileObj.GetComponent<Tile>();
+            if (tile == null) return;
+            
             tile.Initialize(pos.Value.x, pos.Value.y, tile.TileType, this);
             tileObj.transform.position = new Vector3(
                 pos.Value.x * tileSize,
@@ -509,18 +551,33 @@ namespace PuzzleAttack.Grid
                     // Find the first tile above that can drop
                     for (var aboveY = y + 1; aboveY < gridHeight; aboveY++)
                     {
-                        var tile = _grid[x, aboveY];
-                        if (tile == null) continue;
+                        var cell = _grid[x, aboveY];
+                        if (cell == null) continue;
+
+                        // Check if it's garbage - garbage has its own falling logic
+                        var garbageRef = cell.GetComponent<GarbageReference>();
+                        if (garbageRef != null)
+                        {
+                            Debug.Log($"[CollectDrops] Cell ({x},{aboveY}) is garbage reference, stopping column search");
+                            break;
+                        }
+                        
+                        var garbageBlock = cell.GetComponent<GarbageBlock>();
+                        if (garbageBlock != null)
+                        {
+                            Debug.Log($"[CollectDrops] Cell ({x},{aboveY}) is garbage block, stopping column search");
+                            break;
+                        }
 
                         // Skip tiles already dropping
-                        if (_droppingTiles.Contains(tile))
+                        if (_droppingTiles.Contains(cell))
                         {
                             Debug.Log($"[CollectDrops] Tile at ({x},{aboveY}) already dropping, stopping column search");
                             break;
                         }
 
                         // Skip tiles being swapped
-                        if (_swappingTiles.Contains(tile))
+                        if (_swappingTiles.Contains(cell))
                         {
                             Debug.Log($"[CollectDrops] Tile at ({x},{aboveY}) is swapping, stopping column search");
                             break;
@@ -533,18 +590,25 @@ namespace PuzzleAttack.Grid
                             break;
                         }
 
+                        // Skip tiles held during garbage conversion
+                        if (garbageManager.IsTileHeld(cell))
+                        {
+                            Debug.Log($"[CollectDrops] Tile at ({x},{aboveY}) held during conversion, stopping column search");
+                            break;
+                        }
+
                         // Found a tile to drop
                         var from = new Vector2Int(x, aboveY);
                         var to = new Vector2Int(x, y);
 
-                        drops.Add((tile, from, to));
+                        drops.Add((cell, from, to));
                         pendingTargets.Add(to);
                         
                         // Update grid immediately
-                        _grid[x, y] = tile;
+                        _grid[x, y] = cell;
                         _grid[x, aboveY] = null;
 
-                        Debug.Log($"[CollectDrops] Tile {tile.name} will drop from ({from.x},{from.y}) to ({to.x},{to.y})");
+                        Debug.Log($"[CollectDrops] Tile {cell.name} will drop from ({from.x},{from.y}) to ({to.x},{to.y})");
                         break;
                     }
                 }
@@ -579,7 +643,10 @@ namespace PuzzleAttack.Grid
                 maxDistance = Mathf.Max(maxDistance, distance);
 
                 var tile = tileObj.GetComponent<Tile>();
-                tile.Initialize(to.x, to.y, tile.TileType, this);
+                if (tile != null)
+                {
+                    tile.Initialize(to.x, to.y, tile.TileType, this);
+                }
                 blockSlipManager.BeginDrop(tileObj, from, to);
             }
 
@@ -592,13 +659,41 @@ namespace PuzzleAttack.Grid
 
         private void ProcessGarbage()
         {
+            // Only drop garbage when conditions are right
             if (garbageManager.GetPendingGarbageCount() > 0 
-                && !garbageManager.IsProcessingGarbage()
+                && !garbageManager.IsProcessingGarbage
+                && !garbageManager.IsProcessingConversion
                 && !matchProcessor.IsProcessingMatches
-                && !HasActiveDrops())
+                && !HasActiveDrops()
+                && !garbageManager.HasFallingGarbage())
             {
                 garbageManager.DropPendingGarbage();
             }
+        }
+
+        #endregion
+
+        #region Debug
+
+        /// <summary>
+        /// Debug method to spawn garbage for testing.
+        /// </summary>
+        [ContextMenu("Spawn Test Garbage 3x1")]
+        public void SpawnTestGarbage3x1()
+        {
+            garbageManager.QueueGarbage(3, 1);
+        }
+
+        [ContextMenu("Spawn Test Garbage 6x2")]
+        public void SpawnTestGarbage6x2()
+        {
+            garbageManager.QueueGarbage(6, 2);
+        }
+
+        [ContextMenu("Spawn Test Garbage 4x3")]
+        public void SpawnTestGarbage4x3()
+        {
+            garbageManager.QueueGarbage(4, 3);
         }
 
         #endregion

@@ -6,6 +6,7 @@ namespace PuzzleAttack.Grid
 {
     /// <summary>
     /// Controls grid rising mechanics, speed levels, breathing room, and game over detection.
+    /// Handles both regular tiles and garbage blocks.
     /// </summary>
     public class GridRiser : MonoBehaviour
     {
@@ -98,7 +99,7 @@ namespace PuzzleAttack.Grid
 
         public void RequestFastRise()
         {
-            if (!_gridManager.IsSwapping && !_matchProcessor.isProcessingMatches)
+            if (!_gridManager.IsSwapping && !_matchProcessor.IsProcessingMatches)
                 StartCoroutine(RiseLoop());
         }
 
@@ -141,7 +142,7 @@ namespace PuzzleAttack.Grid
                     HandleGracePeriod();
                 else if (_gridManager.IsSwapping)
                     _pausedTimeDebt += Time.deltaTime;
-                else if (_matchProcessor.isProcessingMatches)
+                else if (_matchProcessor.IsProcessingMatches)
                 { /* Pause without debt */ }
                 else if (_breathingRoomTimer > 0f)
                 { /* Pause for breathing room */ }
@@ -166,7 +167,7 @@ namespace PuzzleAttack.Grid
 
         private void UpdateBreathingRoom()
         {
-            if (_breathingRoomTimer <= 0f || _matchProcessor.isProcessingMatches) return;
+            if (_breathingRoomTimer <= 0f || _matchProcessor.IsProcessingMatches) return;
 
             _breathingRoomTimer -= Time.deltaTime;
             if (_breathingRoomTimer <= 0f)
@@ -180,7 +181,7 @@ namespace PuzzleAttack.Grid
         {
             CheckTopRow();
 
-            if (!_matchProcessor.isProcessingMatches)
+            if (!_matchProcessor.IsProcessingMatches)
             {
                 _gracePeriodTimer -= Time.deltaTime;
                 Debug.Log($"Grace Period: {_gracePeriodTimer:F2}s");
@@ -238,30 +239,63 @@ namespace PuzzleAttack.Grid
 
         private void UpdateTilePositions()
         {
-            // Update main grid tiles
-            foreach (var tile in _grid)
+            // Update main grid - handle both tiles and garbage
+            for (var x = 0; x < _gridWidth; x++)
             {
-                if (tile == null || _gridManager.IsTileAnimating(tile)) continue;
+                for (var y = 0; y < _gridHeight; y++)
+                {
+                    var cell = _grid[x, y];
+                    if (cell == null) continue;
+                    
+                    // Skip animating tiles
+                    if (_gridManager.IsTileAnimating(cell)) continue;
 
-                var ts = tile.GetComponent<Tile>();
-                tile.transform.position = new Vector3(
-                    ts.GridX * _tileSize,
-                    ts.GridY * _tileSize + CurrentGridOffset,
-                    0);
-                _tileSpawner.UpdateTileActiveState(tile, ts.GridY, CurrentGridOffset);
+                    // Check if it's a regular tile
+                    var tile = cell.GetComponent<Tile>();
+                    if (tile != null)
+                    {
+                        cell.transform.position = new Vector3(
+                            tile.GridX * _tileSize,
+                            tile.GridY * _tileSize + CurrentGridOffset,
+                            0);
+                        _tileSpawner.UpdateTileActiveState(cell, tile.GridY, CurrentGridOffset);
+                        continue;
+                    }
+
+                    // Check if it's garbage (only update the anchor, not references)
+                    var garbageBlock = cell.GetComponent<GarbageBlock>();
+                    if (garbageBlock != null && !garbageBlock.IsFalling && !garbageBlock.IsConverting)
+                    {
+                        cell.transform.position = new Vector3(
+                            garbageBlock.AnchorPosition.x * _tileSize,
+                            garbageBlock.AnchorPosition.y * _tileSize + CurrentGridOffset,
+                            0);
+                        continue;
+                    }
+
+                    // GarbageReference objects don't need position updates - they're children of the GarbageBlock
+                    // or their position is relative to the owner
+                }
             }
 
             // Update preload tiles
-            foreach (var tile in _preloadGrid)
+            for (var x = 0; x < _gridWidth; x++)
             {
-                if (tile == null) continue;
+                for (var y = 0; y < _preloadGrid.GetLength(1); y++)
+                {
+                    var cell = _preloadGrid[x, y];
+                    if (cell == null) continue;
 
-                var ts = tile.GetComponent<Tile>();
-                tile.transform.position = new Vector3(
-                    ts.GridX * _tileSize,
-                    ts.GridY * _tileSize + CurrentGridOffset,
-                    0);
-                _tileSpawner.UpdateTileActiveState(tile, ts.GridY, CurrentGridOffset);
+                    var tile = cell.GetComponent<Tile>();
+                    if (tile != null)
+                    {
+                        cell.transform.position = new Vector3(
+                            tile.GridX * _tileSize,
+                            tile.GridY * _tileSize + CurrentGridOffset,
+                            0);
+                        _tileSpawner.UpdateTileActiveState(cell, tile.GridY, CurrentGridOffset);
+                    }
+                }
             }
         }
 
@@ -275,7 +309,8 @@ namespace PuzzleAttack.Grid
 
             for (var x = 0; x < _gridWidth; x++)
             {
-                if (_grid[x, _gridHeight - 1] == null) continue;
+                var cell = _grid[x, _gridHeight - 1];
+                if (cell == null) continue;
 
                 var topRowWorldY = (_gridHeight - 1) * _tileSize + CurrentGridOffset;
                 if (topRowWorldY >= (_gridHeight - 1) * _tileSize)

@@ -84,8 +84,65 @@ PrefabInstance:
       propertyPath: m_Name
       value: Garbage_Tile
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 38676406450996664, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 5124203171544064163, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 816705185610074402}
+    - targetCorrespondingSourceObject: {fileID: 5124203171544064163, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2963036880961316962}
   m_SourcePrefab: {fileID: 100100000, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
+--- !u!1 &2825724620208511161 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 5124203171544064163, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
+  m_PrefabInstance: {fileID: 6929401763448158234}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &816705185610074402
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2825724620208511161}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1cb7405596789b44aaffacc4c3e3df24, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  convertSound: {fileID: 8300000, guid: 4e30c9fff33ffb14590011fb2f98e63e, type: 3}
+  landSound: {fileID: 8300000, guid: c737aea1045a5a0438016691a3e878a0, type: 3}
+--- !u!114 &2963036880961316962
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2825724620208511161}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 60e4a03a4933b2e4bbb3a1cedd7bf92c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  sliceSprites:
+  - {fileID: 874330464, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
+  - {fileID: -1562094834, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
+  - {fileID: -378554502, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
+  - {fileID: 922710605, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
+  - {fileID: 428518684, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
+  - {fileID: -376523258, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
+  - {fileID: -945786654, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
+  - {fileID: -790216060, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
+  - {fileID: 68547909, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
+  centerDecoration: {fileID: 0}
+  decorationOffset: {x: 0, y: 0}
+  showDecoration: 1
+  minimumSizeForDecoration: {x: 2, y: 2}
+  tileSize: 1
+  sortingOrder: 5
+  sortingLayerName: Default
+  spriteMaterial: {fileID: 2100000, guid: cdbe16210c40f8a4d8ceee04702d73db, type: 2}
+  shrinkAnimationDuration: 0.2

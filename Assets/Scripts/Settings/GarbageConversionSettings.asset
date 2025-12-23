@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c0ca17cc49fa6c549bdda26433d9a848, type: 3}
+  m_Name: GarbageConversionSettings
+  m_EditorClassIdentifier: 
+  timeBetweenTileSpawns: 0.05
+  timeBetweenRowConversions: 0.3
+  scanEffectDuration: 0.5
+  conversionStartDelay: 0.1
+  rowsPerMatch: 1
+  iterateThroughEmptySpace: 1
+  propagateToCluster: 1
+  clusterConvertsSequentially: 1
+  tileSpawnOrder: 0
+  useScanEffect: 1
+  scanHighlightColor: {r: 1, g: 1, b: 1, a: 1}
+  scanHighlightIntensity: 0.5
+  conversionStartFlash: {r: 1, g: 1, b: 1, a: 0.8}
+  conversionStartFlashDuration: 0.1
+  holdTilesUntilComplete: 1
+  holdGarbageDuringConversion: 1
+  scanTickSound: {fileID: 0}
+  tileSpawnSound: {fileID: 0}
+  conversionCompleteSound: {fileID: 0}
