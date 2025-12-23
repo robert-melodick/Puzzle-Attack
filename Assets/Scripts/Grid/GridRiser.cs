@@ -48,6 +48,7 @@ namespace PuzzleAttack.Grid
         private CursorController _cursorController;
         private MatchDetector _matchDetector;
         private MatchProcessor _matchProcessor;
+        private GarbageManager _garbageManager;
 
         private float _tileSize;
         private int _gridWidth;
@@ -76,7 +77,7 @@ namespace PuzzleAttack.Grid
 
         public void Initialize(GridManager manager, GameObject[,] grid, GameObject[,] preloadGrid,
             TileSpawner spawner, CursorController cursor, MatchDetector detector,
-            MatchProcessor processor, float tileSize, int gridWidth, int gridHeight)
+            MatchProcessor processor, GarbageManager garbageMgr, float tileSize, int gridWidth, int gridHeight)
         {
             _gridManager = manager;
             _grid = grid;
@@ -85,6 +86,7 @@ namespace PuzzleAttack.Grid
             _cursorController = cursor;
             _matchDetector = detector;
             _matchProcessor = processor;
+            _garbageManager = garbageMgr;
             _tileSize = tileSize;
             _gridWidth = gridWidth;
             _gridHeight = gridHeight;
@@ -228,6 +230,12 @@ namespace PuzzleAttack.Grid
                 CurrentGridOffset -= _tileSize;
                 _tileSpawner.SpawnRowAtBottom(CurrentGridOffset, _cursorController);
                 UpdateTilePositions();
+
+                // Notify garbage manager that grid shifted up
+                if (_garbageManager != null)
+                {
+                    _garbageManager.OnGridShiftedUp();
+                }
 
                 var matches = _matchDetector.GetAllMatches();
                 if (matches.Count > 0 && !_matchProcessor.IsProcessingMatches)

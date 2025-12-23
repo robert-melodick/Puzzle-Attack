@@ -97,14 +97,14 @@ namespace PuzzleAttack.Grid
             tileSpawner.Initialize(this, tileSize, _grid, _preloadGrid, gridWidth, gridHeight, preloadRows);
             cursorController.Initialize(this, tileSize, gridWidth, gridHeight, tileSpawner, gridRiser);
             matchDetector.Initialize(_grid, gridWidth, gridHeight);
-            matchProcessor.Initialize(this, _grid, matchDetector);
-            gridRiser.Initialize(this, _grid, _preloadGrid, tileSpawner, cursorController, 
-                matchDetector, matchProcessor, tileSize, gridWidth, gridHeight);
+            matchProcessor.Initialize(this, _grid, matchDetector, garbageManager);
+            gridRiser.Initialize(this, _grid, _preloadGrid, tileSpawner, cursorController,
+                matchDetector, matchProcessor, garbageManager, tileSize, gridWidth, gridHeight);
 
             blockSlipManager.Initialize(this, _grid, gridWidth, gridHeight, tileSize,
                 swapDuration, dropSpeed, gridRiser, matchDetector, matchProcessor,
                 cursorController, _swappingTiles, _droppingTiles);
-            
+
             garbageManager.Initialize(this, tileSpawner, matchDetector, gridRiser);
         }
 
@@ -492,8 +492,17 @@ namespace PuzzleAttack.Grid
                 {
                     iterations++;
 
+                    // Drop normal tiles
                     var drops = CollectDrops();
-                    if (drops.Count == 0) break;
+                    if (drops.Count == 0)
+                    {
+                        // No tile drops, check if garbage needs to fall
+                        bool garbageNeedsFalling = garbageManager.HasGarbageThatNeedsFalling();
+                        if (!garbageNeedsFalling)
+                        {
+                            break; // Nothing to drop
+                        }
+                    }
 
                     ValidateDropTargets(drops);
                     var maxDropDistance = ExecuteDrops(drops);
@@ -507,6 +516,9 @@ namespace PuzzleAttack.Grid
 
                     // Small delay between iterations to let animations fully settle
                     yield return new WaitForSeconds(0.02f);
+
+                    // After tiles drop, check if garbage needs to fall
+                    yield return StartCoroutine(garbageManager.ProcessGarbageFalling());
                 }
 
                 if (iterations >= maxIterations)

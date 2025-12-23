@@ -1,11 +1,13 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace PuzzleAttack.Grid
 {
     /// <summary>
     /// Spawns tiles, manages preload rows, and handles row spawning during grid rise.
-    /// Note: Garbage spawning is now handled by GarbageManager.
+    /// Handles both regular tiles and garbage blocks when shifting the grid.
+    /// Note: Garbage spawning is handled by GarbageManager.
     /// </summary>
     public class TileSpawner : MonoBehaviour
     {
@@ -151,24 +153,74 @@ namespace PuzzleAttack.Grid
 
         public void SpawnRowAtBottom(float currentGridOffset, CursorController cursorController)
         {
-            // Shift all tiles up in grid array
+            // Track garbage blocks we've already processed (they span multiple cells)
+            var processedGarbage = new HashSet<GarbageBlock>();
+
+            // First pass: Update garbage blocks before shifting grid
+            // We need to do this separately because garbage spans multiple cells
+            for (var x = 0; x < _gridWidth; x++)
+            {
+                for (var y = 0; y < _gridHeight; y++)
+                {
+                    var cell = _grid[x, y];
+                    if (cell == null) continue;
+
+                    // Check for garbage block anchor
+                    var garbageBlock = cell.GetComponent<GarbageBlock>();
+                    if (garbageBlock != null && !processedGarbage.Contains(garbageBlock))
+                    {
+                        // Don't shift garbage that's falling or converting
+                        if (!garbageBlock.IsFalling && !garbageBlock.IsConverting)
+                        {
+                            // Shift anchor position up by 1
+                            var newAnchorY = garbageBlock.AnchorPosition.y + 1;
+                            garbageBlock.SetAnchorPosition(garbageBlock.AnchorPosition.x, newAnchorY);
+                        }
+                        processedGarbage.Add(garbageBlock);
+                        continue;
+                    }
+
+                    // Check for garbage reference - just mark the owner as processed
+                    var garbageRef = cell.GetComponent<GarbageReference>();
+                    if (garbageRef != null && garbageRef.Owner != null)
+                    {
+                        if (!processedGarbage.Contains(garbageRef.Owner))
+                        {
+                            if (!garbageRef.Owner.IsFalling && !garbageRef.Owner.IsConverting)
+                            {
+                                var newAnchorY = garbageRef.Owner.AnchorPosition.y + 1;
+                                garbageRef.Owner.SetAnchorPosition(garbageRef.Owner.AnchorPosition.x, newAnchorY);
+                            }
+                            processedGarbage.Add(garbageRef.Owner);
+                        }
+                    }
+                }
+            }
+
+            // Second pass: Shift all grid entries up
             for (var x = 0; x < _gridWidth; x++)
             {
                 for (var y = _gridHeight - 1; y > 0; y--)
                 {
                     _grid[x, y] = _grid[x, y - 1];
-                    if (_grid[x, y] != null && !_gridManager.IsTileAnimating(_grid[x, y]))
+                    
+                    var cell = _grid[x, y];
+                    if (cell == null) continue;
+                    if (_gridManager.IsTileAnimating(cell)) continue;
+
+                    // Update tile coordinates
+                    var tile = cell.GetComponent<Tile>();
+                    if (tile != null)
                     {
-                        var ts = _grid[x, y].GetComponent<Tile>();
-                        if (ts != null)
-                        {
-                            ts.Initialize(x, y, ts.TileType, _gridManager);
-                            UpdateTileActiveState(_grid[x, y], y, currentGridOffset);
-                        }
+                        tile.Initialize(x, y, tile.TileType, _gridManager);
+                        UpdateTileActiveState(cell, y, currentGridOffset);
                     }
+                    
+                    // Note: Garbage blocks and references don't need individual coordinate updates here
+                    // because we updated the anchor position in the first pass
                 }
 
-                // Move preload tile into main grid
+                // Move preload tile into main grid at row 0
                 if (_preloadGrid[x, _preloadRows - 1] != null)
                 {
                     var tile = _preloadGrid[x, _preloadRows - 1];

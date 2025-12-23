@@ -41,11 +41,17 @@ namespace PuzzleAttack.Grid
 
         #region Initialization
 
-        public void Initialize(GridManager manager, GameObject[,] grid, MatchDetector matchDetector)
+        public void Initialize(GridManager manager, GameObject[,] grid, MatchDetector matchDetector, GarbageManager garbageMgr = null)
         {
             _gridManager = manager;
             _grid = grid;
             _matchDetector = matchDetector;
+
+            // Set garbage manager reference if provided
+            if (garbageMgr != null)
+            {
+                garbageManager = garbageMgr;
+            }
         }
 
         #endregion

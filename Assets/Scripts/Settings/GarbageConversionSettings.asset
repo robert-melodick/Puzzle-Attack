@@ -12,10 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c0ca17cc49fa6c549bdda26433d9a848, type: 3}
   m_Name: GarbageConversionSettings
   m_EditorClassIdentifier: 
-  timeBetweenTileSpawns: 0.05
+  timeBetweenTileSpawns: 0.5
   timeBetweenRowConversions: 0.3
   scanEffectDuration: 0.5
-  conversionStartDelay: 0.1
+  conversionStartDelay: 0.2
   rowsPerMatch: 1
   iterateThroughEmptySpace: 1
   propagateToCluster: 1

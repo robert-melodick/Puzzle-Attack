@@ -168,6 +168,22 @@ namespace PuzzleAttack.Grid
         }
 
         /// <summary>
+        /// Check if any garbage blocks need to fall (have no bottom support).
+        /// </summary>
+        public bool HasGarbageThatNeedsFalling()
+        {
+            foreach (var garbage in _activeGarbage)
+            {
+                if (garbage == null || garbage.IsConverting) continue;
+                if (!garbage.HasBottomSupport(_gridManager.Grid, _gridManager.Height))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Check if a tile is being held during garbage conversion.
         /// </summary>
         public bool IsTileHeld(GameObject tile)
@@ -189,7 +205,7 @@ namespace PuzzleAttack.Grid
 
             // Find all garbage blocks adjacent to the match
             var adjacentGarbage = new HashSet<GarbageBlock>();
-            
+
             foreach (var pos in matchPositions)
             {
                 // Check cardinal directions
@@ -201,7 +217,7 @@ namespace PuzzleAttack.Grid
 
             // Filter to only settled garbage
             var settledGarbage = adjacentGarbage.Where(g => g.IsSettled).ToList();
-            
+
             if (settledGarbage.Count == 0) return;
 
             Debug.Log($"[GarbageManager] Match adjacent to {settledGarbage.Count} garbage block(s)");
@@ -210,12 +226,32 @@ namespace PuzzleAttack.Grid
 
         private void CheckGarbageAdjacent(int x, int y, HashSet<GarbageBlock> result)
         {
-            if (x < 0 || x >= _gridManager.Width || y < 0 || y >= _gridManager.Height) return;
+            if (x < 0 || x >= _gridManager.Width || y < 0 || y >= _gridManager.Height)
+            {
+                Debug.Log($"[CheckGarbageAdjacent] Position ({x},{y}) out of bounds");
+                return;
+            }
 
             var garbage = GetGarbageAt(x, y);
-            if (garbage != null && !result.Contains(garbage))
+            if (garbage != null)
             {
-                result.Add(garbage);
+                if (!result.Contains(garbage))
+                {
+                    Debug.Log($"[CheckGarbageAdjacent] Found garbage at ({x},{y}) - Block at ({garbage.AnchorPosition.x},{garbage.AnchorPosition.y})");
+                    result.Add(garbage);
+                }
+            }
+            else
+            {
+                var cell = _gridManager.Grid[x, y];
+                if (cell != null)
+                {
+                    Debug.Log($"[CheckGarbageAdjacent] Cell at ({x},{y}) is not garbage, it's {cell.name}");
+                }
+                else
+                {
+                    Debug.Log($"[CheckGarbageAdjacent] Cell at ({x},{y}) is empty");
+                }
             }
         }
 
@@ -545,6 +581,25 @@ namespace PuzzleAttack.Grid
             return new Vector2Int(garbage.AnchorPosition.x, targetY);
         }
 
+        /// <summary>
+        /// Called when the grid shifts up by one row (new row spawned at bottom).
+        /// Updates falling garbage targets to account for the shift.
+        /// </summary>
+        public void OnGridShiftedUp()
+        {
+            if (_fallingGarbage.Count == 0) return;
+
+            foreach (var garbage in _fallingGarbage)
+            {
+                if (garbage == null) continue;
+
+                // Shift target up by 1
+                var currentTarget = garbage.TargetPosition;
+                var newTarget = new Vector2Int(currentTarget.x, currentTarget.y + 1);
+                garbage.RetargetFall(newTarget);
+            }
+        }
+
         #endregion
 
         #region Cluster Management
@@ -669,9 +724,8 @@ namespace PuzzleAttack.Grid
 
             _isProcessingConversion = false;
 
-            // Trigger falling for everything
+            // Trigger falling for everything (DropTiles now handles garbage falling too)
             yield return _gridManager.StartCoroutine(_gridManager.DropTiles());
-            yield return StartCoroutine(ProcessGarbageFalling());
         }
 
         private IEnumerator ConvertGarbageBlock(GarbageBlock garbage)
