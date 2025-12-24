@@ -220,38 +220,19 @@ namespace PuzzleAttack.Grid
 
             if (settledGarbage.Count == 0) return;
 
-            Debug.Log($"[GarbageManager] Match adjacent to {settledGarbage.Count} garbage block(s)");
             StartCoroutine(ProcessConversion(settledGarbage));
         }
 
         private void CheckGarbageAdjacent(int x, int y, HashSet<GarbageBlock> result)
         {
             if (x < 0 || x >= _gridManager.Width || y < 0 || y >= _gridManager.Height)
-            {
-                Debug.Log($"[CheckGarbageAdjacent] Position ({x},{y}) out of bounds");
                 return;
-            }
 
             var garbage = GetGarbageAt(x, y);
             if (garbage != null)
             {
                 if (!result.Contains(garbage))
-                {
-                    Debug.Log($"[CheckGarbageAdjacent] Found garbage at ({x},{y}) - Block at ({garbage.AnchorPosition.x},{garbage.AnchorPosition.y})");
                     result.Add(garbage);
-                }
-            }
-            else
-            {
-                var cell = _gridManager.Grid[x, y];
-                if (cell != null)
-                {
-                    Debug.Log($"[CheckGarbageAdjacent] Cell at ({x},{y}) is not garbage, it's {cell.name}");
-                }
-                else
-                {
-                    Debug.Log($"[CheckGarbageAdjacent] Cell at ({x},{y}) is empty");
-                }
             }
         }
 
@@ -301,8 +282,6 @@ namespace PuzzleAttack.Grid
             // Spawn the garbage block
             var garbage = SpawnGarbageBlock(spawnX, spawnY, width, height);
             if (garbage == null) yield break;
-
-            Debug.Log($"[GarbageManager] Spawned garbage at ({spawnX},{spawnY}) size {width}x{height}");
 
             // Let it fall
             yield return StartCoroutine(ProcessGarbageFalling());
@@ -632,8 +611,6 @@ namespace PuzzleAttack.Grid
                     _clusters.Add(cluster);
                 }
             }
-
-            Debug.Log($"[GarbageManager] Updated clusters: {_clusters.Count} cluster(s) from {_activeGarbage.Count} blocks");
         }
 
         private void FloodFillCluster(GarbageBlock start, GarbageCluster cluster, HashSet<GarbageBlock> processed)
@@ -756,7 +733,7 @@ namespace PuzzleAttack.Grid
 
             // Convert rows
             var rowsToConvert = Mathf.Min(conversionSettings.rowsPerMatch, garbage.CurrentHeight);
-            
+
             for (var i = 0; i < rowsToConvert && garbage.CurrentHeight > 0; i++)
             {
                 yield return StartCoroutine(ConvertBottomRow(garbage));
@@ -765,6 +742,19 @@ namespace PuzzleAttack.Grid
                 {
                     yield return new WaitForSeconds(conversionSettings.timeBetweenRowConversions);
                 }
+            }
+
+            // Apply the visual shrink once after all rows are converted
+            float shrinkDuration = 0f;
+            if (!garbage.IsFullyConverted())
+            {
+                shrinkDuration = garbage.ApplyVisualShrink(_gridManager);
+            }
+
+            // Wait for shrink animation to complete before ending conversion
+            if (shrinkDuration > 0f)
+            {
+                yield return new WaitForSeconds(shrinkDuration);
             }
 
             garbage.EndConversion();
@@ -853,7 +843,7 @@ namespace PuzzleAttack.Grid
 
             // Update garbage block state
             garbage.OnRowConverted();
-            
+
             // Update anchor position in grid if garbage still exists
             if (!garbage.IsFullyConverted())
             {
@@ -885,7 +875,6 @@ namespace PuzzleAttack.Grid
 
         private void ReleaseHeldTiles()
         {
-            Debug.Log($"[GarbageManager] Releasing {_heldTiles.Count} held tiles");
             _heldTiles.Clear();
             
             // Play completion sound
@@ -898,8 +887,6 @@ namespace PuzzleAttack.Grid
 
         private void DestroyGarbageBlock(GarbageBlock garbage)
         {
-            Debug.Log($"[GarbageManager] Destroying fully converted garbage block");
-            
             ClearGarbageFromGrid(garbage);
             _activeGarbage.Remove(garbage);
             _fallingGarbage.Remove(garbage);

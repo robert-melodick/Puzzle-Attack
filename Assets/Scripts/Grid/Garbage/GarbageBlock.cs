@@ -40,11 +40,15 @@ namespace PuzzleAttack.Grid
         // State
         public bool IsFalling { get; private set; }
         public bool IsConverting { get; private set; }
-        public bool IsSettled => !IsFalling && !IsConverting;
+        public bool IsShrinking { get; private set; }
+        public bool IsTriggered { get; private set; }
+        public bool IsSettled => !IsFalling && !IsConverting && !IsShrinking;
 
         // Conversion progress
         public int RowsConverted { get; private set; }
         public int CurrentConversionRow { get; private set; }
+        public int HeightBeforeConversion { get; private set; }
+        public Vector2Int AnchorBeforeConversion { get; private set; }
 
         // Cluster management
         public GarbageCluster Cluster { get; set; }
@@ -91,11 +95,13 @@ namespace PuzzleAttack.Grid
             CurrentConversionRow = 0;
             IsFalling = false;
             IsConverting = false;
+            IsTriggered = false;
             _gridManager = manager;
 
             if (_renderer != null)
             {
                 _renderer.RebuildVisual(width, height);
+                _renderer.SetFaceState(GarbageRenderer.FaceState.Normal);
             }
         }
 
@@ -119,6 +125,9 @@ namespace PuzzleAttack.Grid
             IsFalling = true;
             TargetPosition = target;
             AnimationVersion++;
+            
+            // Update face to falling expression
+            UpdateFaceState();
         }
 
         /// <summary>
@@ -128,6 +137,9 @@ namespace PuzzleAttack.Grid
         {
             IsFalling = false;
             AnchorPosition = TargetPosition;
+            
+            // Update face state
+            UpdateFaceState();
         }
 
         /// <summary>
@@ -211,6 +223,34 @@ namespace PuzzleAttack.Grid
 
         #endregion
 
+        #region Triggering (Adjacent Match Detected)
+
+        /// <summary>
+        /// Called when an adjacent match is detected. Shows the "triggered" face.
+        /// </summary>
+        public void TriggerFromAdjacentMatch()
+        {
+            if (IsTriggered || IsConverting) return;
+            
+            IsTriggered = true;
+            UpdateFaceState();
+            
+            Debug.Log($"[GarbageBlock] Triggered from adjacent match at ({AnchorPosition.x},{AnchorPosition.y})");
+        }
+
+        /// <summary>
+        /// Clear the triggered state (if the match didn't result in conversion).
+        /// </summary>
+        public void ClearTriggered()
+        {
+            if (!IsTriggered) return;
+            
+            IsTriggered = false;
+            UpdateFaceState();
+        }
+
+        #endregion
+
         #region Conversion
 
         /// <summary>
@@ -219,9 +259,16 @@ namespace PuzzleAttack.Grid
         public void BeginConversion()
         {
             if (IsConverting) return;
-            
+
             IsConverting = true;
+            IsTriggered = false; // Clear triggered since we're now converting
             CurrentConversionRow = 0;
+            HeightBeforeConversion = CurrentHeight;
+            AnchorBeforeConversion = AnchorPosition;
+            
+            // Update face to converting expression
+            UpdateFaceState();
+            
             Debug.Log($"[GarbageBlock] Beginning conversion for {Width}x{CurrentHeight} block at ({AnchorPosition.x},{AnchorPosition.y})");
         }
 
@@ -237,13 +284,69 @@ namespace PuzzleAttack.Grid
             // Move anchor up since bottom row is gone
             AnchorPosition = new Vector2Int(AnchorPosition.x, AnchorPosition.y + 1);
 
-            // Update visual
-            if (_renderer != null)
-            {
-                _renderer.ShrinkFromBottom(CurrentHeight);
-            }
+            // Update face - will switch to "Destroyed" if this was second-to-last row
+            // (meaning CurrentHeight is now 1, so next conversion is the final one)
+            UpdateFaceState();
+
+            // Note: Visual shrink animation is handled separately via ApplyVisualShrink()
+            // after all rows in this conversion cycle are complete
 
             Debug.Log($"[GarbageBlock] Row converted. Remaining height: {CurrentHeight}, New anchor: ({AnchorPosition.x},{AnchorPosition.y})");
+        }
+
+        /// <summary>
+        /// Apply the visual shrink with animation based on rows converted.
+        /// Returns the animation duration.
+        /// </summary>
+        public float ApplyVisualShrink(GridManager gridManager = null)
+        {
+            if (_renderer == null || CurrentHeight <= 0) return 0f;
+
+            var rowsConverted = HeightBeforeConversion - CurrentHeight;
+            if (rowsConverted > 0)
+            {
+                IsShrinking = true;
+                _renderer.ShrinkFromBottom(CurrentHeight, rowsConverted, this, gridManager);
+                return _renderer.shrinkAnimationDuration;
+            }
+            return 0f;
+        }
+
+        /// <summary>
+        /// Update the GameObject's world position to match the current anchor.
+        /// Called after shrink animation completes.
+        /// </summary>
+        public void UpdateVisualPosition(float gridOffset)
+        {
+            // Keep at original position during shrinking
+            if (IsShrinking)
+            {
+                transform.position = new Vector3(
+                    AnchorBeforeConversion.x * _gridManager.TileSize,
+                    AnchorBeforeConversion.y * _gridManager.TileSize + gridOffset,
+                    0);
+            }
+            else
+            {
+                transform.position = new Vector3(
+                    AnchorPosition.x * _gridManager.TileSize,
+                    AnchorPosition.y * _gridManager.TileSize + gridOffset,
+                    0);
+            }
+        }
+
+        /// <summary>
+        /// Called when shrink animation completes.
+        /// </summary>
+        public void OnShrinkComplete(float gridOffset)
+        {
+            IsShrinking = false;
+
+            // Now update to the final position
+            transform.position = new Vector3(
+                AnchorPosition.x * _gridManager.TileSize,
+                AnchorPosition.y * _gridManager.TileSize + gridOffset,
+                0);
         }
 
         /// <summary>
@@ -252,6 +355,19 @@ namespace PuzzleAttack.Grid
         public void EndConversion()
         {
             IsConverting = false;
+            
+            // Update face state (will go to normal if still alive, or destroyed if about to be removed)
+            if (CurrentHeight > 0)
+            {
+                UpdateFaceState();
+            }
+            else
+            {
+                // Block is fully converted, show destroyed face briefly
+                if (_renderer != null)
+                    _renderer.SetFaceState(GarbageRenderer.FaceState.Destroyed);
+            }
+            
             Debug.Log($"[GarbageBlock] Conversion ended. Remaining height: {CurrentHeight}");
         }
 
@@ -319,6 +435,52 @@ namespace PuzzleAttack.Grid
             }
 
             return cells;
+        }
+
+        #endregion
+
+        #region Face State Management
+
+        /// <summary>
+        /// Update the face based on current state. Priority: Converting > Triggered > Falling > Normal
+        /// Special case: Show "Destroyed" face when converting the final row.
+        /// </summary>
+        private void UpdateFaceState()
+        {
+            if (_renderer == null) return;
+
+            if (IsConverting)
+            {
+                // Show destroyed face if this is the last row
+                if (CurrentHeight <= 1)
+                {
+                    _renderer.SetFaceState(GarbageRenderer.FaceState.Destroyed);
+                }
+                else
+                {
+                    _renderer.SetFaceState(GarbageRenderer.FaceState.Converting);
+                }
+            }
+            else if (IsTriggered)
+            {
+                _renderer.SetFaceState(GarbageRenderer.FaceState.Triggered);
+            }
+            else if (IsFalling)
+            {
+                _renderer.SetFaceState(GarbageRenderer.FaceState.Falling);
+            }
+            else
+            {
+                _renderer.SetFaceState(GarbageRenderer.FaceState.Normal);
+            }
+        }
+
+        /// <summary>
+        /// Get the current face state from the renderer.
+        /// </summary>
+        public GarbageRenderer.FaceState GetCurrentFaceState()
+        {
+            return _renderer != null ? _renderer.GetFaceState() : GarbageRenderer.FaceState.Normal;
         }
 
         #endregion

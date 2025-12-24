@@ -249,6 +249,43 @@ public class Debugger : MonoBehaviour
         {
             garbageManager.QueueGarbage(1,1);
         }
+        if (Input.GetKeyDown(KeyCode.Keypad2))
+        {
+            garbageManager.QueueGarbage(2,1);
+        }
+        if (Input.GetKeyDown(KeyCode.Keypad3))
+        {
+            garbageManager.QueueGarbage(3,1);
+        }
+        if (Input.GetKeyDown(KeyCode.Keypad4))
+        {
+            garbageManager.QueueGarbage(1,2);
+        }
+        if (Input.GetKeyDown(KeyCode.Keypad5))
+        {
+            garbageManager.QueueGarbage(2,2);
+        }
+        if (Input.GetKeyDown(KeyCode.Keypad6))
+        {
+            garbageManager.QueueGarbage(3,2);
+        }
+        if (Input.GetKeyDown(KeyCode.Keypad7))
+        {
+            garbageManager.QueueGarbage(1,3);
+        }
+        if (Input.GetKeyDown(KeyCode.Keypad8))
+        {
+            garbageManager.QueueGarbage(2,3);
+        }
+        if (Input.GetKeyDown(KeyCode.Keypad9))
+        {
+            garbageManager.QueueGarbage(3,3);
+        }
+        if (Input.GetKeyDown(KeyCode.KeypadMultiply))
+        {
+            Debug.Log("Large Garbage incoming!");
+            garbageManager.QueueGarbage(6,3);
+        }
     }
 
     void UpdateFPSTracking()

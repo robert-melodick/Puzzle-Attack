@@ -272,12 +272,19 @@ namespace PuzzleAttack.Grid
 
                     // Check if it's garbage (only update the anchor, not references)
                     var garbageBlock = cell.GetComponent<GarbageBlock>();
-                    if (garbageBlock != null && !garbageBlock.IsFalling && !garbageBlock.IsConverting)
+                    if (garbageBlock != null && !garbageBlock.IsFalling && !garbageBlock.IsConverting && !garbageBlock.IsShrinking)
                     {
                         cell.transform.position = new Vector3(
                             garbageBlock.AnchorPosition.x * _tileSize,
                             garbageBlock.AnchorPosition.y * _tileSize + CurrentGridOffset,
                             0);
+                        continue;
+                    }
+
+                    // Handle shrinking garbage - keep at original position
+                    if (garbageBlock != null && garbageBlock.IsShrinking)
+                    {
+                        garbageBlock.UpdateVisualPosition(CurrentGridOffset);
                         continue;
                     }
 

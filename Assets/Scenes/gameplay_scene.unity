@@ -155,6 +155,7 @@ Transform:
   - {fileID: 1187648628}
   - {fileID: 1271421760}
   - {fileID: 645350754}
+  - {fileID: 1615134851}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &236026099
@@ -859,6 +860,22 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &1615134851 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+  m_PrefabInstance: {fileID: 8351957083116550166}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1615134852 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 6191586834160293000, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+  m_PrefabInstance: {fileID: 8351957083116550166}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ca9a9ecd5ca4892478496b9e90695bf6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!1001 &1620983041
@@ -1652,6 +1669,10 @@ PrefabInstance:
       propertyPath: garbageManager
       value: 
       objectReference: {fileID: 1959258787}
+    - target: {fileID: 2877464028446485601, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: dangerZoneManager
+      value: 
+      objectReference: {fileID: 1615134852}
     - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
       propertyPath: timeDebtText
       value: 
@@ -1932,6 +1953,79 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1001 &8351957083116550166
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 73906830}
+    m_Modifications:
+    - target: {fileID: 146505187192828492, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_Name
+      value: DangerZoneManager
+      objectReference: {fileID: 0}
+    - target: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0.60758924
+      objectReference: {fileID: 0}
+    - target: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 5.0342703
+      objectReference: {fileID: 0}
+    - target: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -4.5287833
+      objectReference: {fileID: 0}
+    - target: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4278378223530208678, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6191586834160293000, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: dangerZoneRows
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 6191586834160293000, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: tileWarningMaterial
+      value: 
+      objectReference: {fileID: 2100000, guid: 69c21da7beef34943af9230f4efff0af, type: 2}
+    - target: {fileID: 6191586834160293000, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: tileCriticalMaterial
+      value: 
+      objectReference: {fileID: 2100000, guid: d77e721289255e24d88b152bfcfdd650, type: 2}
+    - target: {fileID: 6191586834160293000, guid: fbf800479adabbc4992ba097b46451be, type: 3}
+      propertyPath: garbageWarningMaterial
+      value: 
+      objectReference: {fileID: 2100000, guid: 0fb93cefba7aa064eb3459f00b720ab5, type: 2}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: fbf800479adabbc4992ba097b46451be, type: 3}
 --- !u!1001 &8470609511525562083
 PrefabInstance:
   m_ObjectHideFlags: 0

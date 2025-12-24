@@ -11,19 +11,19 @@ namespace PuzzleAttack.Grid
     {
         [Header("Timing")]
         [Tooltip("Delay between each tile spawning within a row")]
-        [Range(0.01f, 0.5f)]
+        [Range(0.01f, 3f)]
         public float timeBetweenTileSpawns = 0.05f;
 
         [Tooltip("Delay between converting each row")]
-        [Range(0.1f, 1f)]
+        [Range(0.1f, 3f)]
         public float timeBetweenRowConversions = 0.3f;
 
         [Tooltip("Duration of the scan/highlight effect traveling up the garbage")]
-        [Range(0f, 2f)]
+        [Range(0f, 3f)]
         public float scanEffectDuration = 0.5f;
 
         [Tooltip("Delay before starting conversion after being triggered")]
-        [Range(0f, 0.5f)]
+        [Range(0f, 3f)]
         public float conversionStartDelay = 0.1f;
 
         [Header("Conversion Rules")]

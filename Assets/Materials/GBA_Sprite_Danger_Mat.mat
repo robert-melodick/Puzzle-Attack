@@ -20,7 +20,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: GBA_Sprite_Base_Mat
+  m_Name: GBA_Sprite_Danger_Mat
   m_Shader: {fileID: 4800000, guid: eea032393267ab847ae3b386a7344b88, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -64,7 +64,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: a7f33a8372f8500428b0cdc89fcf4085, type: 3}
+        m_Texture: {fileID: 2800000, guid: 330e99a370a40324fb517842798c657d, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
@@ -153,10 +153,10 @@ Material:
     - _UseOutline: 0
     - _UseScanlines: 0
     - _UseShadow: 0
-    - _WaveAmplitude: 0
-    - _WaveAmplitudeY: 0
-    - _WaveFrequency: 12.9
-    - _WaveSpeed: 4
+    - _WaveAmplitude: 0.0085
+    - _WaveAmplitudeY: 0.0255
+    - _WaveFrequency: 0.07
+    - _WaveSpeed: 31.4
     - _WorkflowMode: 1
     - _ZWrite: 1
     m_Colors:

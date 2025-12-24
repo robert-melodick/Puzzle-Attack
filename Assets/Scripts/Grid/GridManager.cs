@@ -34,6 +34,7 @@ namespace PuzzleAttack.Grid
         public TileSpawner tileSpawner;
         public BlockSlipManager blockSlipManager;
         public GarbageManager garbageManager;
+        public DangerZoneManager dangerZoneManager;
 
         #endregion
 
@@ -73,6 +74,11 @@ namespace PuzzleAttack.Grid
         {
             if (gridRiser.IsGameOver) return;
             if (GameStateManager.Instance != null && GameStateManager.Instance.IsPaused) return;
+            
+            if (dangerZoneManager != null)
+            {
+                dangerZoneManager.UpdateDangerState();
+            }
 
             CleanupNullTiles();
             blockSlipManager.CleanupTracking();
@@ -106,6 +112,8 @@ namespace PuzzleAttack.Grid
                 cursorController, _swappingTiles, _droppingTiles);
 
             garbageManager.Initialize(this, tileSpawner, matchDetector, gridRiser);
+            
+            dangerZoneManager.Initialize(this, gridRiser, garbageManager);
         }
 
         private IEnumerator InitializeGrid()

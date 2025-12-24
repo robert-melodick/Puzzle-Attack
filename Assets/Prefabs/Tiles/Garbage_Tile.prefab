@@ -33,13 +33,17 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 1655486477822056234, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1655486477822056234, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
       propertyPath: m_WasSpriteAssigned
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 1655486477822056234, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
-      objectReference: {fileID: 2100000, guid: cdbe16210c40f8a4d8ceee04702d73db, type: 2}
+      objectReference: {fileID: 2100000, guid: f46a0d0d63e5c494295dddba13b26e09, type: 2}
     - target: {fileID: 3451647556371168420, guid: a0fe827fb54456f44a65c8fed9e86b13, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -127,22 +131,35 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 60e4a03a4933b2e4bbb3a1cedd7bf92c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  sliceSprites:
-  - {fileID: 874330464, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
-  - {fileID: -1562094834, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
-  - {fileID: -378554502, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
-  - {fileID: 922710605, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
-  - {fileID: 428518684, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
-  - {fileID: -376523258, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
-  - {fileID: -945786654, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
-  - {fileID: -790216060, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
-  - {fileID: 68547909, guid: 3da79c972154b71469f5f7645600fac3, type: 3}
-  centerDecoration: {fileID: 0}
-  decorationOffset: {x: 0, y: 0}
-  showDecoration: 1
-  minimumSizeForDecoration: {x: 2, y: 2}
+  sprites:
+    topLeft: {fileID: 1268389955, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    topRight: {fileID: -1608214926, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    bottomLeft: {fileID: 599587800, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    bottomRight: {fileID: -1818422859, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    top: {fileID: 1297997101, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    bottom: {fileID: -1361418947, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    left: {fileID: 1708304680, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    right: {fileID: 1430595828, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    center: {fileID: 343992733, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    horizontalLeft: {fileID: -1587385147, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    horizontalMiddle: {fileID: -650214734, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    horizontalRight: {fileID: 113157194, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    verticalBottom: {fileID: -1361687578, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    verticalMiddle: {fileID: 1498865411, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    verticalTop: {fileID: 974259495, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    single: {fileID: -602807354, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+  faceSprites:
+    normal: {fileID: 148827446, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    falling: {fileID: 0}
+    triggered: {fileID: 502608818, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    converting: {fileID: 502608818, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+    destroyed: {fileID: -1299600523, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+  faceSprite: {fileID: 148827446, guid: b542a7a60ebddec41857d522ce014c4d, type: 3}
+  faceOffset: {x: 0, y: 0}
+  minimumSizeForFace: {x: 1, y: 1}
+  faceSortingOrderOffset: 1
   tileSize: 1
   sortingOrder: 5
   sortingLayerName: Default
-  spriteMaterial: {fileID: 2100000, guid: cdbe16210c40f8a4d8ceee04702d73db, type: 2}
-  shrinkAnimationDuration: 0.2
+  spriteMaterial: {fileID: 2100000, guid: f46a0d0d63e5c494295dddba13b26e09, type: 2}
+  shrinkAnimationDuration: 0

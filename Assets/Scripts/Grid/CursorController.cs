@@ -145,19 +145,10 @@ namespace PuzzleAttack.Grid
             var newX = Mathf.Clamp(_position.x + dx, 0, _gridWidth - 2);
             var newY = Mathf.Clamp(_position.y + dy, 0, _gridHeight - 1);
 
-            Debug.Log($"[Cursor] Move from ({_position.x},{_position.y}) to ({newX},{newY})");
-
-            if (!IsRowActive(newY))
-            {
-                Debug.Log($"[Cursor] Row {newY} not active");
-                return;
-            }
-
             _position = new Vector2Int(newX, newY);
             GridX = newX;
             GridY = newY;
 
-            Debug.Log($"[Cursor] Now at ({newX},{newY})");
             UpdateCursorPosition(_currentGridOffset);
         }
 
@@ -174,7 +165,6 @@ namespace PuzzleAttack.Grid
             const float visibilityThreshold = 0f;
 
             var isActive = worldY >= visibilityThreshold;
-            Debug.Log($"[Cursor] Row {gridY}: worldY={worldY:F3}, active={isActive}");
 
             return isActive;
         }

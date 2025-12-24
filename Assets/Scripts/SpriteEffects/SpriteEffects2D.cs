@@ -58,6 +58,10 @@ public class SpriteEffects2D : MonoBehaviour
     private int _useDitheringID;
     private int _ditherStrengthID;
     private int _preQuantizeContrastID;
+    private int _scrollSpeedXID;
+    private int _scrollSpeedYID;
+    private int _scrollOffsetXID;
+    private int _scrollOffsetYID;
 
     // Flash state
     private Coroutine _flashCoroutine;
@@ -69,6 +73,9 @@ public class SpriteEffects2D : MonoBehaviour
 
     // Mosaic state
     private Coroutine _mosaicCoroutine;
+
+    // Scroll state
+    private Coroutine _scrollCoroutine;
 
     #endregion
 
@@ -148,6 +155,12 @@ public class SpriteEffects2D : MonoBehaviour
         _useDitheringID = Shader.PropertyToID("_UseDithering");
         _ditherStrengthID = Shader.PropertyToID("_DitherStrength");
         _preQuantizeContrastID = Shader.PropertyToID("_PreQuantizeContrast");
+
+        // UV Scrolling
+        _scrollSpeedXID = Shader.PropertyToID("_ScrollSpeedX");
+        _scrollSpeedYID = Shader.PropertyToID("_ScrollSpeedY");
+        _scrollOffsetXID = Shader.PropertyToID("_ScrollOffsetX");
+        _scrollOffsetYID = Shader.PropertyToID("_ScrollOffsetY");
     }
 
     #endregion
@@ -711,6 +724,157 @@ public class SpriteEffects2D : MonoBehaviour
 
     #endregion
 
+    #region UV Scrolling Effects
+
+    /// <summary>
+    /// Set continuous UV scrolling speed (units per second).
+    /// Positive X scrolls right, positive Y scrolls up.
+    /// </summary>
+    public void SetScrollSpeed(float speedX, float speedY)
+    {
+        _mat.SetFloat(_scrollSpeedXID, speedX);
+        _mat.SetFloat(_scrollSpeedYID, speedY);
+    }
+
+    /// <summary>
+    /// Set continuous UV scrolling speed using a Vector2.
+    /// </summary>
+    public void SetScrollSpeed(Vector2 speed)
+    {
+        _mat.SetFloat(_scrollSpeedXID, speed.x);
+        _mat.SetFloat(_scrollSpeedYID, speed.y);
+    }
+
+    /// <summary>
+    /// Set manual UV offset (0-1 range, wraps automatically).
+    /// Useful for precise positioning or script-driven scrolling.
+    /// </summary>
+    public void SetScrollOffset(float offsetX, float offsetY)
+    {
+        _mat.SetFloat(_scrollOffsetXID, offsetX);
+        _mat.SetFloat(_scrollOffsetYID, offsetY);
+    }
+
+    /// <summary>
+    /// Set manual UV offset using a Vector2.
+    /// </summary>
+    public void SetScrollOffset(Vector2 offset)
+    {
+        _mat.SetFloat(_scrollOffsetXID, offset.x);
+        _mat.SetFloat(_scrollOffsetYID, offset.y);
+    }
+
+    /// <summary>
+    /// Set both scroll speed and offset at once.
+    /// </summary>
+    public void SetScroll(Vector2 speed, Vector2 offset)
+    {
+        _mat.SetFloat(_scrollSpeedXID, speed.x);
+        _mat.SetFloat(_scrollSpeedYID, speed.y);
+        _mat.SetFloat(_scrollOffsetXID, offset.x);
+        _mat.SetFloat(_scrollOffsetYID, offset.y);
+    }
+
+    /// <summary>
+    /// Enable diagonal scrolling with a single speed value.
+    /// Angle in degrees (0 = right, 90 = up, 180 = left, 270 = down).
+    /// </summary>
+    public void SetScrollAngle(float speed, float angleDegrees)
+    {
+        float angleRad = angleDegrees * Mathf.Deg2Rad;
+        float speedX = Mathf.Cos(angleRad) * speed;
+        float speedY = Mathf.Sin(angleRad) * speed;
+        SetScrollSpeed(speedX, speedY);
+    }
+
+    /// <summary>
+    /// Animate scroll offset from current to target over duration.
+    /// </summary>
+    public Coroutine ScrollTo(Vector2 targetOffset, float duration)
+    {
+        if (_scrollCoroutine != null)
+        {
+            StopCoroutine(_scrollCoroutine);
+        }
+        _scrollCoroutine = StartCoroutine(ScrollToRoutine(targetOffset, duration));
+        return _scrollCoroutine;
+    }
+
+    private IEnumerator ScrollToRoutine(Vector2 targetOffset, float duration)
+    {
+        Vector2 startOffset = new Vector2(
+            _mat.GetFloat(_scrollOffsetXID),
+            _mat.GetFloat(_scrollOffsetYID)
+        );
+
+        float t = 0f;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float progress = t / duration;
+            Vector2 current = Vector2.Lerp(startOffset, targetOffset, progress);
+            SetScrollOffset(current);
+            yield return null;
+        }
+
+        SetScrollOffset(targetOffset);
+        _scrollCoroutine = null;
+    }
+
+    /// <summary>
+    /// Stop continuous scrolling and reset offset.
+    /// </summary>
+    public void ClearScroll()
+    {
+        if (_scrollCoroutine != null)
+        {
+            StopCoroutine(_scrollCoroutine);
+            _scrollCoroutine = null;
+        }
+        _mat.SetFloat(_scrollSpeedXID, 0f);
+        _mat.SetFloat(_scrollSpeedYID, 0f);
+        _mat.SetFloat(_scrollOffsetXID, 0f);
+        _mat.SetFloat(_scrollOffsetYID, 0f);
+    }
+
+    /// <summary>
+    /// Stop continuous scrolling but keep current offset.
+    /// </summary>
+    public void StopScroll()
+    {
+        if (_scrollCoroutine != null)
+        {
+            StopCoroutine(_scrollCoroutine);
+            _scrollCoroutine = null;
+        }
+        _mat.SetFloat(_scrollSpeedXID, 0f);
+        _mat.SetFloat(_scrollSpeedYID, 0f);
+    }
+
+    /// <summary>
+    /// Get current scroll speed.
+    /// </summary>
+    public Vector2 GetScrollSpeed()
+    {
+        return new Vector2(
+            _mat.GetFloat(_scrollSpeedXID),
+            _mat.GetFloat(_scrollSpeedYID)
+        );
+    }
+
+    /// <summary>
+    /// Get current scroll offset.
+    /// </summary>
+    public Vector2 GetScrollOffset()
+    {
+        return new Vector2(
+            _mat.GetFloat(_scrollOffsetXID),
+            _mat.GetFloat(_scrollOffsetYID)
+        );
+    }
+
+    #endregion
+
     #region Utility
 
     /// <summary>
@@ -728,6 +892,7 @@ public class SpriteEffects2D : MonoBehaviour
         ClearChromaticAberration();
         ClearShadow();
         ClearDissolve();
+        ClearScroll();
         SetFade(1f);
     }
 

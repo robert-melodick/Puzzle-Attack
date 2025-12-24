@@ -75,6 +75,13 @@ Shader "Universal Render Pipeline/2D/GBA Sprite Advanced"
         _DissolveEdgeWidth ("Dissolve Edge Width", Range(0,0.1)) = 0.02
         _DissolveEdgeColor ("Dissolve Edge Color", Color) = (1,0.5,0,1)
 
+        // === UV SCROLLING ===
+        [Header(UV Scrolling)]
+        _ScrollSpeedX ("Scroll Speed X", Float) = 0
+        _ScrollSpeedY ("Scroll Speed Y", Float) = 0
+        _ScrollOffsetX ("Scroll Offset X", Float) = 0
+        _ScrollOffsetY ("Scroll Offset Y", Float) = 0
+
         // === SPRITE RENDERER INTERNALS ===
         [HideInInspector] _RendererColor("RendererColor", Color) = (1,1,1,1)
         [HideInInspector] _Flip ("Flip", Vector) = (1,1,1,1)
@@ -172,6 +179,12 @@ Shader "Universal Render Pipeline/2D/GBA Sprite Advanced"
             float _DissolveEdgeWidth;
             float4 _DissolveEdgeColor;
 
+            // UV Scrolling
+            float _ScrollSpeedX;
+            float _ScrollSpeedY;
+            float _ScrollOffsetX;
+            float _ScrollOffsetY;
+
             float _AlphaCutoff;
 
             // === HELPER FUNCTIONS ===
@@ -255,6 +268,13 @@ Shader "Universal Render Pipeline/2D/GBA Sprite Advanced"
             {
                 float2 uv = IN.uv;
                 float2 screenUV = IN.screenPos.xy / IN.screenPos.w;
+
+                // === UV SCROLLING ===
+                // Apply time-based scrolling plus manual offset
+                float2 scrollOffset;
+                scrollOffset.x = _Time.y * _ScrollSpeedX + _ScrollOffsetX;
+                scrollOffset.y = _Time.y * _ScrollSpeedY + _ScrollOffsetY;
+                uv = frac(uv + scrollOffset); // frac ensures seamless tiling
 
                 // === MOSAIC ===
                 if (_MosaicBlocks > 1.0)
