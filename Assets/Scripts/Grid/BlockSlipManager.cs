@@ -39,20 +39,38 @@ namespace PuzzleAttack.Grid
         #region Tuning Parameters
 
         [Header("BlockSlip Thresholds")]
-        [Tooltip("How much of the falling tile must be in the cursor row to allow swap (0.0-1.0). " +
-                 "0.5 = tile center must be in row, 0.3 = more forgiving (late input), 0.7 = stricter (early input)")]
+        [Tooltip("Tile must be ABOVE this point in the row to be swappable (0.0 = bottom, 1.0 = top). " +
+                 "Higher = stricter (must catch tile earlier while it's still high in the row).")]
         [SerializeField, Range(0f, 1f)] 
         private float _swapWithFallingThreshold = 0.5f;
 
-        [Tooltip("Threshold for blocking slide-under (original blockslip-too-late). " +
-                 "Lower = more forgiving for slide-under attempts.")]
+        [Tooltip("Tile BELOW this point blocks slide-under attempts (0.0 = bottom, 1.0 = top). " +
+                 "This should typically equal swapWithFallingThreshold to avoid gaps. " +
+                 "Lower = more forgiving (can slide under later).")]
         [SerializeField, Range(0f, 1f)]
-        private float _slideUnderBlockedThreshold = 0.4f;
+        private float _slideUnderBlockedThreshold = 0.5f;
 
-        [Tooltip("Threshold for quick-nudge activation. Tile must be above this point in the row. " +
-                 "Higher = stricter (must catch earlier).")]
-        [SerializeField, Range(0f, 1f)]
-        private float _quickNudgeThreshold = 0.5f;
+        [Header("Debug Visualization")]
+        [Tooltip("Enable gizmo visualization of BlockSlip thresholds in Scene view")]
+        [SerializeField] private bool _showDebugGizmos = true;
+        
+        [Tooltip("Show thresholds for all rows, not just cursor row")]
+        [SerializeField] private bool _showAllRows = false;
+        
+        [Tooltip("Width of the debug lines (in tiles)")]
+        [SerializeField] private float _debugLineWidth = 6f;
+        
+        [Tooltip("Color for the swappable zone (tile CAN be swapped when in this zone)")]
+        [SerializeField] private Color _swapZoneColor = new Color(0f, 1f, 0f, 0.3f); // Green
+        
+        [Tooltip("Color for the blocked zone (slide-under is blocked when tile is here)")]
+        [SerializeField] private Color _blockedZoneColor = new Color(1f, 0f, 0f, 0.3f); // Red
+        
+        [Tooltip("Color for the threshold line")]
+        [SerializeField] private Color _thresholdLineColor = new Color(1f, 1f, 0f, 1f); // Yellow
+        
+        [Tooltip("Color for row boundaries")]
+        [SerializeField] private Color _rowBoundaryColor = new Color(0.5f, 0.5f, 0.5f, 0.4f); // Gray
 
         #endregion
 
@@ -100,6 +118,143 @@ namespace PuzzleAttack.Grid
             }
 
             _retargetedDrops.RemoveWhere(t => t == null);
+        }
+
+        #endregion
+
+        #region Debug Visualization
+
+        private void OnDrawGizmos()
+        {
+            DrawBlockSlipGizmos();
+        }
+
+        private void OnDrawGizmosSelected()
+        {
+            DrawBlockSlipGizmos();
+        }
+
+        private void DrawBlockSlipGizmos()
+        {
+            if (!_showDebugGizmos) return;
+            if (_tileSize <= 0f) _tileSize = 1f; // Default for editor before initialization
+
+            var offsetY = _gridRiser?.CurrentGridOffset ?? 0f;
+            var lineWidth = _debugLineWidth * _tileSize;
+            var gridWidthVal = _gridWidth > 0 ? _gridWidth : 6;
+            var startX = -lineWidth * 0.5f + (gridWidthVal * _tileSize * 0.5f);
+
+            // Use cursor's GridY property - this matches how CursorController calculates its visual position
+            var cursorRow = _cursorController != null ? _cursorController.GridY : 3;
+
+            if (_showAllRows)
+            {
+                var height = _gridHeight > 0 ? _gridHeight : 12;
+                for (var row = 0; row < height; row++)
+                {
+                    DrawRowThresholds(row, offsetY, startX, lineWidth, row == cursorRow ? 1f : 0.3f);
+                }
+            }
+            else
+            {
+                DrawRowThresholds(cursorRow, offsetY, startX, lineWidth, 1f);
+            }
+
+            // Draw legend in scene view
+            DrawLegend(offsetY);
+        }
+
+        private void DrawRowThresholds(int row, float offsetY, float startX, float lineWidth, float alphaMultiplier)
+        {
+            var rowBottomY = row * _tileSize + offsetY;
+            var rowTopY = rowBottomY + _tileSize;
+
+            // Row boundaries (bottom and top of the row)
+            var boundaryColor = _rowBoundaryColor;
+            boundaryColor.a *= alphaMultiplier;
+            Gizmos.color = boundaryColor;
+            Gizmos.DrawLine(
+                new Vector3(startX, rowBottomY, 0),
+                new Vector3(startX + lineWidth, rowBottomY, 0));
+            Gizmos.DrawLine(
+                new Vector3(startX, rowTopY, 0),
+                new Vector3(startX + lineWidth, rowTopY, 0));
+
+            // Single threshold line - this is where swap becomes possible / slide-under becomes blocked
+            // Using the swap threshold as the canonical line (both should typically be equal)
+            var thresholdY = rowBottomY + _tileSize * _swapWithFallingThreshold;
+            
+            var lineColor = _thresholdLineColor;
+            lineColor.a *= alphaMultiplier;
+            Gizmos.color = lineColor;
+            Gizmos.DrawLine(
+                new Vector3(startX, thresholdY, 0),
+                new Vector3(startX + lineWidth, thresholdY, 0));
+            // Draw thicker line by drawing multiple
+            Gizmos.DrawLine(
+                new Vector3(startX, thresholdY + 0.01f, 0),
+                new Vector3(startX + lineWidth, thresholdY + 0.01f, 0));
+            Gizmos.DrawLine(
+                new Vector3(startX, thresholdY - 0.01f, 0),
+                new Vector3(startX + lineWidth, thresholdY - 0.01f, 0));
+
+            // Draw filled zones
+            if (alphaMultiplier > 0.5f)
+            {
+                // Swappable zone (ABOVE threshold) - green tint
+                // When tile is here, swap IS allowed
+                var swapZoneColor = _swapZoneColor;
+                swapZoneColor.a *= alphaMultiplier;
+                DrawFilledRect(startX, thresholdY, lineWidth, rowTopY - thresholdY, swapZoneColor);
+
+                // Blocked zone (BELOW slide-under threshold) - red tint  
+                // When tile is here, slide-under is BLOCKED
+                var slideUnderThresholdY = rowBottomY + _tileSize * _slideUnderBlockedThreshold;
+                var blockedZoneColor = _blockedZoneColor;
+                blockedZoneColor.a *= alphaMultiplier;
+                DrawFilledRect(startX, rowBottomY, lineWidth, slideUnderThresholdY - rowBottomY, blockedZoneColor);
+                
+                // If there's a gap between the two thresholds, show it in yellow (ambiguous zone)
+                if (_slideUnderBlockedThreshold < _swapWithFallingThreshold)
+                {
+                    var gapColor = new Color(1f, 1f, 0f, 0.15f * alphaMultiplier);
+                    DrawFilledRect(startX, slideUnderThresholdY, lineWidth, thresholdY - slideUnderThresholdY, gapColor);
+                }
+            }
+        }
+
+        private void DrawFilledRect(float x, float y, float width, float height, Color color)
+        {
+            if (height <= 0) return;
+            var center = new Vector3(x + width * 0.5f, y + height * 0.5f, 0);
+            var size = new Vector3(width, height, 0.01f);
+            Gizmos.color = color;
+            Gizmos.DrawCube(center, size);
+        }
+
+        private void DrawLegend(float offsetY)
+        {
+#if UNITY_EDITOR
+            var legendPos = new Vector3(-2f * _tileSize, (_gridHeight + 1) * _tileSize + offsetY, 0);
+            
+            UnityEditor.Handles.color = _swapZoneColor;
+            UnityEditor.Handles.Label(legendPos, "■ GREEN ZONE: Swap allowed (tile is high enough)");
+            
+            legendPos.y -= _tileSize * 0.4f;
+            UnityEditor.Handles.color = _blockedZoneColor;
+            UnityEditor.Handles.Label(legendPos, "■ RED ZONE: Slide-under blocked (too late)");
+            
+            legendPos.y -= _tileSize * 0.4f;
+            UnityEditor.Handles.color = _thresholdLineColor;
+            UnityEditor.Handles.Label(legendPos, "― YELLOW LINE: Threshold boundary");
+            
+            if (_slideUnderBlockedThreshold < _swapWithFallingThreshold)
+            {
+                legendPos.y -= _tileSize * 0.4f;
+                UnityEditor.Handles.color = new Color(1f, 1f, 0f, 0.5f);
+                UnityEditor.Handles.Label(legendPos, "■ YELLOW ZONE: Gap between thresholds (consider aligning)");
+            }
+#endif
         }
 
         #endregion
@@ -196,37 +351,82 @@ namespace PuzzleAttack.Grid
             var rightX = cursorPos.x + 1;
             var y = cursorPos.y;
 
-            var leftTile = _grid[leftX, y];
-            var rightTile = _grid[rightX, y];
+            Debug.Log($"[TrySwapWithFalling] Checking cursor ({leftX},{y})-({rightX},{y}), {_droppingTiles.Count} tiles dropping");
 
-            var leftScript = leftTile?.GetComponent<Tile>();
-            var rightScript = rightTile?.GetComponent<Tile>();
+            // Get idle tiles from grid (these are at their actual positions)
+            var leftGridTile = _grid[leftX, y];
+            var rightGridTile = _grid[rightX, y];
 
-            var leftFalling = leftScript != null && leftScript.IsFalling;
-            var rightFalling = rightScript != null && rightScript.IsFalling;
-            var leftIdle = leftScript == null || leftScript.IsIdle;
-            var rightIdle = rightScript == null || rightScript.IsIdle;
+            var leftGridScript = leftGridTile?.GetComponent<Tile>();
+            var rightGridScript = rightGridTile?.GetComponent<Tile>();
 
-            // Check for falling tile in cursor row that we can swap with
-            if (leftFalling && rightIdle && rightTile != null)
+            var leftIdle = leftGridTile != null && (leftGridScript == null || leftGridScript.IsIdle);
+            var rightIdle = rightGridTile != null && (rightGridScript == null || rightGridScript.IsIdle);
+
+            Debug.Log($"[TrySwapWithFalling] Grid tiles - Left: {leftGridTile?.name ?? "null"} (idle={leftIdle}), Right: {rightGridTile?.name ?? "null"} (idle={rightIdle})");
+
+            // Find falling tiles that are visually passing through the cursor row
+            // (They're registered in the grid at their TARGET, not their current visual position)
+            GameObject leftFallingTile = null;
+            GameObject rightFallingTile = null;
+
+            foreach (var tile in _droppingTiles)
             {
-                if (IsTileInSwapRange(leftTile, y))
+                if (tile == null) continue;
+                if (!_dropTargets.TryGetValue(tile, out var target)) continue;
+
+                // Check if this falling tile is in the left or right column of the cursor
+                if (target.x != leftX && target.x != rightX) continue;
+
+                var tileWorldY = tile.transform.position.y;
+                var offsetY = _gridRiser?.CurrentGridOffset ?? 0f;
+                var rowBottomY = y * _tileSize + offsetY;
+                var rowTopY = rowBottomY + _tileSize;
+                
+                Debug.Log($"[TrySwapWithFalling] Checking dropping tile {tile.name}: target=({target.x},{target.y}), worldY={tileWorldY:F2}, row range={rowBottomY:F2}-{rowTopY:F2}");
+
+                // Check if the tile is visually in the cursor row
+                if (!IsTileInSwapRange(tile, y))
                 {
-                    StartCoroutine(ExecuteSwapWithFalling(rightTile, leftTile, 
-                        new Vector2Int(rightX, y), new Vector2Int(leftX, y)));
-                    return true;
+                    Debug.Log($"[TrySwapWithFalling] {tile.name} NOT in swap range");
+                    continue;
                 }
+
+                Debug.Log($"[TrySwapWithFalling] {tile.name} IS in swap range for column {target.x}");
+
+                if (target.x == leftX)
+                    leftFallingTile = tile;
+                else if (target.x == rightX)
+                    rightFallingTile = tile;
             }
 
-            if (rightFalling && leftIdle && leftTile != null)
+            Debug.Log($"[TrySwapWithFalling] Found falling tiles - Left: {leftFallingTile?.name ?? "null"}, Right: {rightFallingTile?.name ?? "null"}");
+
+            // Try to swap: falling tile on left with idle tile on right
+            if (leftFallingTile != null && rightIdle && rightGridTile != null)
             {
-                if (IsTileInSwapRange(rightTile, y))
-                {
-                    StartCoroutine(ExecuteSwapWithFalling(leftTile, rightTile,
-                        new Vector2Int(leftX, y), new Vector2Int(rightX, y)));
-                    return true;
-                }
+                Debug.Log($"[TrySwapWithFalling] INITIATING swap: falling {leftFallingTile.name} <-> idle {rightGridTile.name}");
+                StartCoroutine(ExecuteSwapWithFalling(rightGridTile, leftFallingTile, 
+                    new Vector2Int(rightX, y), new Vector2Int(leftX, y)));
+                return true;
             }
+
+            // Try to swap: falling tile on right with idle tile on left
+            if (rightFallingTile != null && leftIdle && leftGridTile != null)
+            {
+                Debug.Log($"[TrySwapWithFalling] INITIATING swap: falling {rightFallingTile.name} <-> idle {leftGridTile.name}");
+                StartCoroutine(ExecuteSwapWithFalling(leftGridTile, rightFallingTile,
+                    new Vector2Int(leftX, y), new Vector2Int(rightX, y)));
+                return true;
+            }
+
+            // Log why we didn't swap
+            if (leftFallingTile != null && !rightIdle)
+                Debug.Log($"[TrySwapWithFalling] Can't swap - left has falling tile but right is not idle");
+            if (rightFallingTile != null && !leftIdle)
+                Debug.Log($"[TrySwapWithFalling] Can't swap - right has falling tile but left is not idle");
+            if (leftFallingTile == null && rightFallingTile == null)
+                Debug.Log($"[TrySwapWithFalling] No falling tiles found in cursor columns");
 
             return false;
         }
@@ -357,157 +557,114 @@ namespace PuzzleAttack.Grid
 
         /// <summary>
         /// Execute a swap between an idle tile and a falling tile.
-        /// The idle tile takes the falling tile's position in the stack.
-        /// Tiles above the falling tile get nudged up, tiles below continue falling.
+        /// The idle tile moves into the falling column, the falling tile moves to the idle position.
+        /// Tiles above in the falling column are nudged up one row, then immediately start falling.
         /// </summary>
         private IEnumerator ExecuteSwapWithFalling(GameObject idleTile, GameObject fallingTile,
             Vector2Int idlePos, Vector2Int fallingPos)
         {
             _gridManager.SetIsSwapping(true);
-            Debug.Log($"[SwapWithFalling] START: Idle {idleTile.name} at ({idlePos.x},{idlePos.y}) <-> Falling {fallingTile.name} at grid ({fallingPos.x},{fallingPos.y})");
+            
+            // Get the falling tile's original drop target before we cancel it
+            Vector2Int? originalFallingTarget = null;
+            if (_dropTargets.TryGetValue(fallingTile, out var target))
+                originalFallingTarget = target;
+            
+            Debug.Log($"[SwapWithFalling] START: Idle {idleTile.name} at ({idlePos.x},{idlePos.y}) <-> Falling {fallingTile.name} " +
+                      $"(target was {originalFallingTarget})");
 
             var fallingCol = fallingPos.x;
             var swapRow = fallingPos.y;
             var offsetY = _gridRiser?.CurrentGridOffset ?? 0f;
             var swapRowWorldY = swapRow * _tileSize + offsetY;
 
-            // --- PHASE 1: Snapshot and categorize all tiles ---
+            // --- PHASE 1: IMMEDIATELY cancel the falling tile's drop ---
+            CancelDrop(fallingTile);
+            Debug.Log($"[SwapWithFalling] Cancelled drop for falling tile {fallingTile.name}");
             
-            // Freeze all dropping tiles in this column to get consistent positions
-            var frozenPositions = new Dictionary<GameObject, float>();
-            foreach (var tile in _droppingTiles)
-            {
-                if (tile == null) continue;
-                if (!_dropTargets.TryGetValue(tile, out var target) || target.x != fallingCol) continue;
-                
-                frozenPositions[tile] = tile.transform.position.y;
-                _dropAnimVersions[tile] = GetVersion(tile) + 1; // Freeze animation
-            }
+            // Give a frame for the old coroutine to exit
+            yield return null;
 
-            // Categorize: tiles that need to be nudged up vs tiles below that continue falling
-            var tilesToNudge = new List<(GameObject tile, Vector2Int gridPos, float worldY)>();
+            // --- PHASE 2: Find tiles above that need to be handled ---
+            var tilesAbove = new List<(GameObject tile, Vector2Int originalTarget, float worldY)>();
             var tilesBelow = new List<(GameObject tile, Vector2Int target)>();
 
-            // First, add the falling tiles (excluding the one we're swapping with)
+            // Check other falling tiles in the column
             foreach (var tile in new List<GameObject>(_droppingTiles))
             {
                 if (tile == null || tile == fallingTile) continue;
-                if (!_dropTargets.TryGetValue(tile, out var target) || target.x != fallingCol) continue;
+                if (!_dropTargets.TryGetValue(tile, out var dropTarget) || dropTarget.x != fallingCol) continue;
 
-                var tileWorldY = frozenPositions.GetValueOrDefault(tile, tile.transform.position.y);
+                var tileWorldY = tile.transform.position.y;
 
                 if (tileWorldY >= swapRowWorldY)
                 {
-                    // This tile is at or above the swap row - needs to be nudged
-                    tilesToNudge.Add((tile, target, tileWorldY));
-                    Debug.Log($"[SwapWithFalling] Falling tile to nudge: {tile.name} at worldY:{tileWorldY:F2}, target:({target.x},{target.y})");
+                    tilesAbove.Add((tile, dropTarget, tileWorldY));
+                    Debug.Log($"[SwapWithFalling] Tile above: {tile.name} at worldY:{tileWorldY:F2}");
                 }
                 else
                 {
-                    // This tile is below - continues falling
-                    tilesBelow.Add((tile, target));
-                    Debug.Log($"[SwapWithFalling] Falling tile below (continues): {tile.name} at worldY:{tileWorldY:F2}");
+                    tilesBelow.Add((tile, dropTarget));
+                    Debug.Log($"[SwapWithFalling] Tile below: {tile.name} at worldY:{tileWorldY:F2}");
                 }
             }
 
-            // Also find stationary tiles at or above the swap row in the falling column
-            for (var y = swapRow; y < _gridHeight; y++)
-            {
-                var tile = _grid[fallingCol, y];
-                if (tile == null || tile == fallingTile || tile == idleTile) continue;
-                if (tilesToNudge.Exists(t => t.tile == tile)) continue; // Already added as falling
-                if (_swappingTiles.Contains(tile)) continue;
-                
-                var tileWorldY = tile.transform.position.y;
-                tilesToNudge.Add((tile, new Vector2Int(fallingCol, y), tileWorldY));
-                Debug.Log($"[SwapWithFalling] Stationary tile to nudge: {tile.name} at grid ({fallingCol},{y})");
-            }
+            // Sort tiles above by world Y (lowest first)
+            tilesAbove.Sort((a, b) => a.worldY.CompareTo(b.worldY));
 
-            // Sort by world Y (lowest first) so we process from bottom to top
-            tilesToNudge.Sort((a, b) => a.worldY.CompareTo(b.worldY));
+            Debug.Log($"[SwapWithFalling] {tilesAbove.Count} tiles above, {tilesBelow.Count} tiles below");
 
-            Debug.Log($"[SwapWithFalling] Total: {tilesToNudge.Count} tiles to nudge, {tilesBelow.Count} tiles below");
-
-            // --- PHASE 2: Check for grid overflow ---
-            var highestNudgeTarget = swapRow;
-            foreach (var (tile, gridPos, worldY) in tilesToNudge)
-            {
-                highestNudgeTarget++;
-            }
-            
-            if (highestNudgeTarget >= _gridHeight)
-            {
-                Debug.LogWarning($"[SwapWithFalling] Would overflow grid (need row {highestNudgeTarget}), aborting");
-                
-                // Unfreeze animations
-                foreach (var tile in frozenPositions.Keys)
-                {
-                    if (tile != null && _droppingTiles.Contains(tile))
-                    {
-                        var target = _dropTargets.GetValueOrDefault(tile, Vector2Int.zero);
-                        StartCoroutine(AnimateDrop(tile, tile.transform.position, target, true));
-                    }
-                }
-                
-                _gridManager.SetIsSwapping(false);
-                yield break;
-            }
-
-            // --- PHASE 3: Cancel drops for tiles being nudged ---
-            CancelDrop(fallingTile);
-            
-            foreach (var (tile, gridPos, worldY) in tilesToNudge)
+            // --- PHASE 3: Cancel drops for tiles above ---
+            foreach (var (tile, originalTarget, worldY) in tilesAbove)
             {
                 CancelDrop(tile);
             }
 
-            // --- PHASE 4: Update grid positions ---
-            
-            // Clear all old positions first
+            // --- PHASE 4: Update grid - clear old positions ---
             _grid[idlePos.x, idlePos.y] = null;
             
-            // Clear the falling tile's grid position (it might be at its target, not swapRow)
-            var fallingTileGridPos = _gridManager.FindTilePosition(fallingTile);
-            if (fallingTileGridPos.HasValue)
-                _grid[fallingTileGridPos.Value.x, fallingTileGridPos.Value.y] = null;
-            
-            // Clear positions of tiles to be nudged
-            foreach (var (tile, gridPos, worldY) in tilesToNudge)
+            if (originalFallingTarget.HasValue)
             {
-                var actualPos = _gridManager.FindTilePosition(tile);
-                if (actualPos.HasValue)
-                    _grid[actualPos.Value.x, actualPos.Value.y] = null;
+                var pos = originalFallingTarget.Value;
+                if (_grid[pos.x, pos.y] == fallingTile)
+                    _grid[pos.x, pos.y] = null;
             }
 
-            // Place the idle tile at the swap row
+            // Clear grid positions of tiles above (they're at their drop targets)
+            foreach (var (tile, originalTarget, worldY) in tilesAbove)
+            {
+                if (_grid[originalTarget.x, originalTarget.y] == tile)
+                    _grid[originalTarget.x, originalTarget.y] = null;
+            }
+
+            // --- PHASE 5: Place swapping tiles ---
             _grid[fallingCol, swapRow] = idleTile;
-            Debug.Log($"[SwapWithFalling] Placed idle tile at ({fallingCol},{swapRow})");
-            
-            // Place the falling tile at the idle position
             _grid[idlePos.x, idlePos.y] = fallingTile;
-            Debug.Log($"[SwapWithFalling] Placed falling tile at ({idlePos.x},{idlePos.y})");
+            Debug.Log($"[SwapWithFalling] Grid: idle tile -> ({fallingCol},{swapRow}), falling tile -> ({idlePos.x},{idlePos.y})");
 
-            // Place nudged tiles at their new positions (each one row higher than previous)
-            var nextNudgeRow = swapRow + 1;
-            var nudgePlan = new List<(GameObject tile, Vector2Int newPos)>();
+            // --- PHASE 6: Place tiles above at new positions (one row higher each) ---
+            var newPositionsAbove = new List<(GameObject tile, Vector2Int newPos)>();
+            var nextRow = swapRow + 1;
             
-            foreach (var (tile, oldGridPos, worldY) in tilesToNudge)
+            foreach (var (tile, originalTarget, worldY) in tilesAbove)
             {
-                var newPos = new Vector2Int(fallingCol, nextNudgeRow);
+                if (nextRow >= _gridHeight)
+                {
+                    Debug.LogError($"[SwapWithFalling] Grid overflow! Cannot place {tile.name} at row {nextRow}");
+                    continue;
+                }
+                
+                var newPos = new Vector2Int(fallingCol, nextRow);
                 _grid[newPos.x, newPos.y] = tile;
-                nudgePlan.Add((tile, newPos));
-                Debug.Log($"[SwapWithFalling] Nudging {tile.name} to ({newPos.x},{newPos.y})");
-                nextNudgeRow++;
+                newPositionsAbove.Add((tile, newPos));
+                Debug.Log($"[SwapWithFalling] Tile above {tile.name} -> grid ({newPos.x},{newPos.y})");
+                nextRow++;
             }
 
-            // --- PHASE 5: Mark tiles and start animations ---
-            
+            // --- PHASE 7: Start swap animations ---
             _swappingTiles.Add(idleTile);
             _swappingTiles.Add(fallingTile);
-            foreach (var (tile, newPos) in nudgePlan)
-                _swappingTiles.Add(tile);
 
-            // Start swap animations
             var idleTileScript = idleTile.GetComponent<Tile>();
             var fallingTileScript = fallingTile.GetComponent<Tile>();
 
@@ -517,59 +674,49 @@ namespace PuzzleAttack.Grid
             StartCoroutine(AnimateSwap(idleTile, new Vector2Int(fallingCol, swapRow)));
             StartCoroutine(AnimateSwap(fallingTile, idlePos));
 
-            // Start nudge animations
-            var maxNudgeDuration = 0f;
-            foreach (var (tile, newPos) in nudgePlan)
+            // --- PHASE 8: Tiles above - start falling to their new targets IMMEDIATELY ---
+            // Don't wait for the swap - they should fall in parallel
+            Debug.Log($"[SwapWithFalling] Starting drops for {newPositionsAbove.Count} tiles above");
+            foreach (var (tile, newPos) in newPositionsAbove)
             {
                 var ts = tile.GetComponent<Tile>();
                 ts?.Initialize(newPos.x, newPos.y, ts.TileType, _gridManager);
                 
-                StartCoroutine(AnimateCascadeSmooth(tile, newPos));
-                
-                var startY = tile.transform.position.y;
-                var endY = newPos.y * _tileSize + offsetY;
-                var distance = Mathf.Abs(endY - startY) / _tileSize;
-                maxNudgeDuration = Mathf.Max(maxNudgeDuration, distance / _dropSpeed);
+                // Start drop animation from current visual position to new grid position
+                var currentWorldPos = tile.transform.position;
+                var fromRow = Mathf.RoundToInt((currentWorldPos.y - offsetY) / _tileSize);
+                Debug.Log($"[SwapWithFalling] Tile above {tile.name}: visual row {fromRow} -> grid ({newPos.x},{newPos.y}), inDropping={_droppingTiles.Contains(tile)}");
+                BeginDrop(tile, new Vector2Int(newPos.x, fromRow), newPos);
             }
 
-            // Unfreeze tiles below - they continue their drops
-            foreach (var (tile, target) in tilesBelow)
+            // --- PHASE 9: Tiles below continue their drops ---
+            foreach (var (tile, dropTarget) in tilesBelow)
             {
                 if (tile == null || !_droppingTiles.Contains(tile)) continue;
                 
                 var currentPos = tile.transform.position;
                 _dropAnimVersions[tile] = GetVersion(tile) + 1;
-                StartCoroutine(AnimateDrop(tile, currentPos, target, true));
+                StartCoroutine(AnimateDrop(tile, currentPos, dropTarget, true));
             }
 
-            // --- PHASE 6: Wait for swap animation only ---
+            // --- PHASE 10: Wait for swap animation ---
             yield return new WaitForSeconds(_swapDuration);
 
-            // --- PHASE 7: Finalize positions ---
+            // --- PHASE 11: Finalize swapped tiles ---
+            var finalOffsetY = _gridRiser?.CurrentGridOffset ?? 0f;
             
-            // Finalize idle tile (now in falling column at swap row)
             if (idleTile != null)
             {
-                var finalOffsetY = _gridRiser?.CurrentGridOffset ?? 0f;
                 idleTileScript?.Initialize(fallingCol, swapRow, idleTileScript.TileType, _gridManager);
                 idleTileScript?.FinishMovement();
                 idleTile.transform.position = new Vector3(
                     fallingCol * _tileSize,
                     swapRow * _tileSize + finalOffsetY,
                     0);
-                
-                // Verify grid consistency
-                if (_grid[fallingCol, swapRow] != idleTile)
-                {
-                    Debug.LogError($"[SwapWithFalling] DESYNC: Grid at ({fallingCol},{swapRow}) is not idleTile! Fixing...");
-                    _grid[fallingCol, swapRow] = idleTile;
-                }
             }
 
-            // Finalize falling tile (now in idle column)
             if (fallingTile != null)
             {
-                var finalOffsetY = _gridRiser?.CurrentGridOffset ?? 0f;
                 fallingTileScript?.Initialize(idlePos.x, idlePos.y, fallingTileScript.TileType, _gridManager);
                 fallingTileScript?.FinishMovement();
                 fallingTile.transform.position = new Vector3(
@@ -578,24 +725,59 @@ namespace PuzzleAttack.Grid
                     0);
             }
 
-            // --- PHASE 8: Cleanup ---
+            // --- PHASE 12: Cleanup ---
             _swappingTiles.Remove(idleTile);
             _swappingTiles.Remove(fallingTile);
-            // Note: nudged tiles are removed from _swappingTiles in AnimateCascadeSmooth's finally block
-
             _gridManager.SetIsSwapping(false);
 
-            // --- PHASE 9: Post-swap drop checks (non-blocking) ---
+            // --- PHASE 13: Check if swapped tiles need to drop ---
+            // IMPORTANT: Check falling tile FIRST since it's now in the idle column
+            // The idle tile will drop into the falling column where there might be tiles above falling
             
-            // Check if swapped tiles need to drop - initiate drops but don't wait
-            CheckAndStartDrop(idleTile, fallingCol, swapRow);
-            CheckAndStartDrop(fallingTile, idlePos.x, idlePos.y);
+            Debug.Log($"[SwapWithFalling] Post-swap grid check:");
+            Debug.Log($"  - Falling tile {fallingTile?.name} at grid ({idlePos.x},{idlePos.y})");
+            Debug.Log($"  - Idle tile {idleTile?.name} at grid ({fallingCol},{swapRow})");
+            
+            // Check what's below the falling tile (now in idle column)
+            if (fallingTile != null && idlePos.y > 0)
+            {
+                var belowFalling = _grid[idlePos.x, idlePos.y - 1];
+                Debug.Log($"  - Below falling tile at ({idlePos.x},{idlePos.y - 1}): {belowFalling?.name ?? "empty"}");
+                
+                if (belowFalling == null)
+                {
+                    // Find where it should land
+                    var landingY = idlePos.y - 1;
+                    while (landingY > 0 && _grid[idlePos.x, landingY - 1] == null)
+                        landingY--;
+                    
+                    Debug.Log($"  - Falling tile should drop to row {landingY}");
+                    
+                    if (landingY < idlePos.y)
+                    {
+                        _grid[idlePos.x, idlePos.y] = null;
+                        _grid[idlePos.x, landingY] = fallingTile;
+                        fallingTileScript?.Initialize(idlePos.x, landingY, fallingTileScript.TileType, _gridManager);
+                        BeginDrop(fallingTile, idlePos, new Vector2Int(idlePos.x, landingY));
+                    }
+                }
+            }
+            
+            // Check what's below the idle tile (now in falling column)
+            // The tiles above should already be falling, so we need to account for their targets
+            if (idleTile != null)
+            {
+                var belowIdle = swapRow > 0 ? _grid[fallingCol, swapRow - 1] : null;
+                Debug.Log($"  - Below idle tile at ({fallingCol},{swapRow - 1}): {belowIdle?.name ?? "empty"}");
+                
+                // Use CheckAndStartDrop which handles dropping tiles
+                CheckAndStartDrop(idleTile, fallingCol, swapRow);
+            }
 
-            // Trigger general drop logic without waiting for completion
-            // This allows the game to continue while drops animate
+            // General drop check for anything else
             _gridManager.StartCoroutine(_gridManager.DropTiles());
 
-            // Check for matches (will run after drops complete due to DropTiles' internal logic)
+            // Check for matches
             var matches = _matchDetector.GetAllMatches();
             if (matches.Count > 0 && !_matchProcessor.IsProcessingMatches)
                 _gridManager.StartCoroutine(_matchProcessor.ProcessMatches(matches));
@@ -728,7 +910,7 @@ namespace PuzzleAttack.Grid
             var processedBlocks = new HashSet<GameObject>();
 
             var swapRowWorldY = row * _tileSize + _gridRiser.CurrentGridOffset;
-            var swapRowQuickNudgeThreshold = swapRowWorldY + _tileSize * _quickNudgeThreshold;
+            var swapRowThreshold = swapRowWorldY + _tileSize * _swapWithFallingThreshold;
 
             // Snapshot falling block positions
             var snapshotPositions = new Dictionary<GameObject, float>();
@@ -757,7 +939,7 @@ namespace PuzzleAttack.Grid
 
                 if (isInSwapRow)
                 {
-                    if (tileWorldY < swapRowQuickNudgeThreshold)
+                    if (tileWorldY < swapRowThreshold)
                         blocksToRetarget.Add((t, target));
                     else
                     {
