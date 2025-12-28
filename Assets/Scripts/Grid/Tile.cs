@@ -1,3 +1,4 @@
+using Unity.VisualScripting;
 using UnityEngine;
 
 namespace PuzzleAttack.Grid
@@ -76,6 +77,7 @@ namespace PuzzleAttack.Grid
             TileType = type;
             _gridManager = manager;
             TargetGridPos = new Vector2Int(x, y);
+            DebugRename();
         }
 
         #endregion
@@ -99,6 +101,7 @@ namespace PuzzleAttack.Grid
         public void FinishMovement()
         {
             State = MovementState.Idle;
+            DebugRename();
         }
 
         public void RetargetFall(Vector2Int newTarget)
@@ -282,6 +285,31 @@ namespace PuzzleAttack.Grid
         }
 
         #endregion
+
+        #region Debug
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
+        public void DebugRename()
+        {
+            string tileColor = "Undefined";
+            
+            if (TileType == 0)
+                tileColor = "Red";
+            if (TileType == 1)
+                tileColor = "Yellow";
+            if (TileType == 2)
+                tileColor = "Purple";
+            if (TileType == 3)
+                tileColor = "Grey";
+            if (TileType == 4)
+                tileColor = "Green";
+            if (TileType == 5)
+                tileColor = "Blue";
+            
+            this.name = tileColor + " (" + GridX + ", " + GridY + ")";
+        }
+
+        #endregion
+        
     }
 
     /// <summary>

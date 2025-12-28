@@ -692,30 +692,5 @@ namespace PuzzleAttack.Grid
         }
 
         #endregion
-
-        #region Debug
-
-        /// <summary>
-        /// Debug method to spawn garbage for testing.
-        /// </summary>
-        [ContextMenu("Spawn Test Garbage 3x1")]
-        public void SpawnTestGarbage3x1()
-        {
-            garbageManager.QueueGarbage(3, 1);
-        }
-
-        [ContextMenu("Spawn Test Garbage 6x2")]
-        public void SpawnTestGarbage6x2()
-        {
-            garbageManager.QueueGarbage(6, 2);
-        }
-
-        [ContextMenu("Spawn Test Garbage 4x3")]
-        public void SpawnTestGarbage4x3()
-        {
-            garbageManager.QueueGarbage(4, 3);
-        }
-
-        #endregion
     }
 }

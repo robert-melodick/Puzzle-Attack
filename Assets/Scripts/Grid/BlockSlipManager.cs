@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using Unity.VisualScripting;
 using UnityEngine;
 
 namespace PuzzleAttack.Grid
@@ -518,11 +519,12 @@ namespace PuzzleAttack.Grid
         /// <summary>
         /// Handle mid-air swap interception - when a swap places blocks in path of falling blocks.
         /// </summary>
-        public bool HandleMidAirSwapInterception(GameObject leftTile, GameObject rightTile, 
-            Vector2Int leftPos, Vector2Int rightPos)
+        public bool HandleMidAirSwapInterception(GameObject leftTile, GameObject rightTile, Vector2Int leftPos, Vector2Int rightPos)
         {
             var handledLeft = CheckMidAirIntercept(leftTile, leftPos);
             var handledRight = CheckMidAirIntercept(rightTile, rightPos);
+            Debug.Log("Mid Air Swap Being Handled -- Left: " + handledLeft + " Right: " + handledRight);
+            
             return handledLeft || handledRight;
         }
 
@@ -1105,10 +1107,8 @@ namespace PuzzleAttack.Grid
                 if (block != null && block != swappedTile && _droppingTiles.Contains(block))
                     fallingAbove.Add((block, new Vector2Int(x, checkY)));
             }
-
+            Debug.Log($"[MidAirIntercept] Falling blocks above: {fallingAbove.Count} | swappedPos ({x},{y})");
             if (fallingAbove.Count == 0) return false;
-
-            Debug.Log($"[MidAirIntercept] {fallingAbove.Count} falling blocks above ({x}, {y})");
 
             // Stop all falling blocks
             foreach (var (tile, gridPos) in fallingAbove)

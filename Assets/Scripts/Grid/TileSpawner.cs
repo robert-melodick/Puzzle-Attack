@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+
 using UnityEngine;
 
 namespace PuzzleAttack.Grid
@@ -29,6 +30,8 @@ namespace PuzzleAttack.Grid
         private int _gridWidth;
         private int _gridHeight;
         private int _preloadRows;
+        private System.Random _seededRandom;
+        private bool _useSeededRandom;
 
         #endregion
 
@@ -59,13 +62,49 @@ namespace PuzzleAttack.Grid
         }
 
         #endregion
+        
+        #region Seeding
+        
+        /// <summary>
+        /// Set a seed for deterministic tile spawning.
+        /// Call this before the grid starts initializing.
+        /// </summary>
+        public void SetSeed(int seed)
+        {
+            _seededRandom = new System.Random(seed);
+            _useSeededRandom = true;
+            Debug.Log($"[TileSpawner] Seeded with: {seed}");
+        }
+
+        /// <summary>
+        /// Clear the seed and return to Unity's random.
+        /// </summary>
+        public void ClearSeed()
+        {
+            _seededRandom = null;
+            _useSeededRandom = false;
+        }
+
+        /// <summary>
+        /// Get a random tile type index using the seeded random if available.
+        /// </summary>
+        private int GetRandomTileType()
+        {
+            if (_useSeededRandom && _seededRandom != null)
+            {
+                return _seededRandom.Next(0, tileSprites.Length);
+            }
+            return Random.Range(0, tileSprites.Length);
+        }
+        
+        #endregion
 
         #region Tile Spawning
 
         public void SpawnTile(int x, int y, float currentGridOffset)
         {
             var pos = new Vector3(x * _tileSize, y * _tileSize + currentGridOffset, 0);
-            var typeIndex = Random.Range(0, tileSprites.Length);
+            var typeIndex = GetRandomTileType();
             var tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
 
             var sr = tile.GetComponent<SpriteRenderer>();
@@ -103,7 +142,7 @@ namespace PuzzleAttack.Grid
         public void SpawnPreloadTile(int x, int y, float currentGridOffset)
         {
             var pos = new Vector3(x * _tileSize, (y - _preloadRows) * _tileSize + currentGridOffset, 0);
-            var typeIndex = Random.Range(0, tileSprites.Length);
+            var typeIndex = GetRandomTileType();
             var tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
 
             var sr = tile.GetComponent<SpriteRenderer>();
