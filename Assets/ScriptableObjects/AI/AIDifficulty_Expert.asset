@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1b088981eaea876419bbab0a14442bc2, type: 3}
+  m_Name: AIDifficulty_Expert
+  m_EditorClassIdentifier: 
+  displayName: Expert
+  description: A ruthless opponent with near-perfect play. Good luck.
+  inputsPerSecond: 10
+  reactionDelaySeconds: 0.05
+  postSwapCooldown: 0.02
+  chainLookaheadDepth: 4
+  setupVsGreedBias: 0.8
+  garbageClearingWeight: 2.5
+  safetyWeight: 2
+  minimumSwapScore: 10
+  suboptimalMoveChance: 0.01
+  hesitationChance: 0
+  maxHesitationDuration: 0
+  missObviousMatchChance: 0
+  panicThreshold: 0.4
+  panicSpeedMultiplier: 2
+  panicMistakeMultiplier: 1.2
+  reduceLookaheadWhenPanicking: 0
+  aggressionBias: 0.9
+  minimumChainGoal: 5

@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 8990849174524226034}
   - component: {fileID: 8236822945619674190}
+  - component: {fileID: 6707197704548330088}
   m_Layer: 0
   m_Name: Debugger
   m_TagString: Untagged
@@ -44,3 +45,50 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e2e6f1c7572d4a142a31992c2455e999, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  gridManager: {fileID: 0}
+  gridRiser: {fileID: 0}
+  cursorController: {fileID: 0}
+  matchProcessor: {fileID: 0}
+  scoreManager: {fileID: 0}
+  gameStateManager: {fileID: 0}
+  garbageManager: {fileID: 0}
+  debugPanel: {fileID: 0}
+  debugText: {fileID: 0}
+  startVisible: 0
+  backgroundColor: {r: 0, g: 0, b: 0, a: 0.7}
+  updateInterval: 0.1
+  showFPS: 1
+  showMemory: 1
+  fpsAveragingFrames: 30
+--- !u!114 &6707197704548330088
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4303983558665489757}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: eaa16ee27f5ae654d80f0eab3ef9406f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  gridManager: {fileID: 0}
+  blockSlipManager: {fileID: 0}
+  gridRiser: {fileID: 0}
+  cursorController: {fileID: 0}
+  debugPanel: {fileID: 0}
+  timelineWidth: 200
+  timelineHeight: 20
+  timelineSpacing: 5
+  columnSpacing: 30
+  closestTileScale: 1.3
+  panelOffset: {x: 10, y: -10}
+  whiteSlideUnder: {r: 1, g: 1, b: 1, a: 1}
+  redBlocked: {r: 1, g: 0.3, b: 0.3, a: 1}
+  greenNudge: {r: 0.3, g: 1, b: 0.3, a: 1}
+  cyanSwapWithFalling: {r: 0.3, g: 1, b: 1, a: 1}
+  grayNoBlockSlip: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  backgroundColor: {r: 0, g: 0, b: 0, a: 0.8}
+  timelineBackground: {r: 0.2, g: 0.2, b: 0.2, a: 0.9}
+  sliderColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  lastSwapMarkerColor: {r: 1, g: 0.5, b: 0, a: 0.7}

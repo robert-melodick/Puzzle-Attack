@@ -7,6 +7,7 @@ namespace PuzzleAttack.Grid
     /// <summary>
     /// Controls grid rising mechanics, speed levels, breathing room, and game over detection.
     /// Handles both regular tiles and garbage blocks.
+    /// All positions are relative to the GridManager's transform position.
     /// </summary>
     public class GridRiser : MonoBehaviour
     {
@@ -99,10 +100,26 @@ namespace PuzzleAttack.Grid
 
         #region Public API
 
+        /// <summary>
+        /// Whether fast rise is currently active (set by player input or AI).
+        /// </summary>
+        public bool IsFastRising { get; set; }
+
+        /// <summary>
+        /// Request fast rise mode. Called by CursorController for player input.
+        /// </summary>
         public void RequestFastRise()
         {
             if (!_gridManager.IsSwapping && !_matchProcessor.IsProcessingMatches)
-                StartCoroutine(RiseLoop());
+                IsFastRising = true;
+        }
+
+        /// <summary>
+        /// Stop fast rise mode.
+        /// </summary>
+        public void StopFastRise()
+        {
+            IsFastRising = false;
         }
 
         public void AddBreathingRoom(int tilesMatched)
@@ -202,8 +219,10 @@ namespace PuzzleAttack.Grid
         private void PerformRise()
         {
             var levelSpeed = GetSpeedForLevel();
-            var isFastRise = Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.L) || Input.GetKey(KeyCode.LeftShift);
-            var baseSpeed = isFastRise ? levelSpeed * fastRiseMultiplier : levelSpeed;
+            
+            // Use the IsFastRising flag instead of direct input check
+            // This allows per-grid control (player input sets their grid's flag, AI sets its grid's flag)
+            var baseSpeed = IsFastRising ? levelSpeed * fastRiseMultiplier : levelSpeed;
 
             var speedMultiplier = _pausedTimeDebt > 0f ? catchUpMultiplier : 1.0f;
             var riseSpeed = baseSpeed * speedMultiplier;
@@ -221,7 +240,11 @@ namespace PuzzleAttack.Grid
             _nextRowSpawnOffset += riseAmount;
 
             UpdateTilePositions();
-            _cursorController.UpdateCursorPosition(CurrentGridOffset);
+            
+            if (_cursorController != null)
+            {
+                _cursorController.UpdateCursorPosition(CurrentGridOffset);
+            }
 
             // Spawn new row when risen enough
             if (_nextRowSpawnOffset >= _tileSize)
@@ -254,7 +277,7 @@ namespace PuzzleAttack.Grid
                 {
                     var cell = _grid[x, y];
                     if (cell == null) continue;
-                    
+
                     // Skip animating tiles
                     if (_gridManager.IsTileAnimating(cell)) continue;
 
@@ -262,10 +285,8 @@ namespace PuzzleAttack.Grid
                     var tile = cell.GetComponent<Tile>();
                     if (tile != null)
                     {
-                        cell.transform.position = new Vector3(
-                            tile.GridX * _tileSize,
-                            tile.GridY * _tileSize + CurrentGridOffset,
-                            0);
+                        // Use GridManager's position helper for proper offset
+                        cell.transform.position = _gridManager.GridToWorldPosition(tile.GridX, tile.GridY, CurrentGridOffset);
                         _tileSpawner.UpdateTileActiveState(cell, tile.GridY, CurrentGridOffset);
                         continue;
                     }
@@ -274,10 +295,11 @@ namespace PuzzleAttack.Grid
                     var garbageBlock = cell.GetComponent<GarbageBlock>();
                     if (garbageBlock != null && !garbageBlock.IsFalling && !garbageBlock.IsConverting && !garbageBlock.IsShrinking)
                     {
-                        cell.transform.position = new Vector3(
-                            garbageBlock.AnchorPosition.x * _tileSize,
-                            garbageBlock.AnchorPosition.y * _tileSize + CurrentGridOffset,
-                            0);
+                        // Use GridManager's position helper for proper offset
+                        cell.transform.position = _gridManager.GridToWorldPosition(
+                            garbageBlock.AnchorPosition.x, 
+                            garbageBlock.AnchorPosition.y, 
+                            CurrentGridOffset);
                         continue;
                     }
 
@@ -304,10 +326,8 @@ namespace PuzzleAttack.Grid
                     var tile = cell.GetComponent<Tile>();
                     if (tile != null)
                     {
-                        cell.transform.position = new Vector3(
-                            tile.GridX * _tileSize,
-                            tile.GridY * _tileSize + CurrentGridOffset,
-                            0);
+                        // Use GridManager's position helper for proper offset
+                        cell.transform.position = _gridManager.GridToWorldPosition(tile.GridX, tile.GridY, CurrentGridOffset);
                         _tileSpawner.UpdateTileActiveState(cell, tile.GridY, CurrentGridOffset);
                     }
                 }
@@ -327,8 +347,11 @@ namespace PuzzleAttack.Grid
                 var cell = _grid[x, _gridHeight - 1];
                 if (cell == null) continue;
 
-                var topRowWorldY = (_gridHeight - 1) * _tileSize + CurrentGridOffset;
-                if (topRowWorldY >= (_gridHeight - 1) * _tileSize)
+                // Calculate world Y using grid origin
+                var topRowWorldY = _gridManager.GridToWorldPosition(0, _gridHeight - 1, CurrentGridOffset).y;
+                var thresholdY = _gridManager.GridToWorldPosition(0, _gridHeight - 1, 0).y;
+                
+                if (topRowWorldY >= thresholdY)
                 {
                     _hasBlockAtTop = true;
                     if (!IsInGracePeriod)

@@ -16,6 +16,10 @@ GameObject:
   - component: {fileID: 3915118934426842190}
   - component: {fileID: 5347899561248015888}
   - component: {fileID: 6975869169476460448}
+  - component: {fileID: 5044228106940764647}
+  - component: {fileID: 5324868256448575238}
+  - component: {fileID: 2170238282710276813}
+  - component: {fileID: 3798992973142588666}
   m_Layer: 0
   m_Name: GridManager
   m_TagString: Untagged
@@ -56,13 +60,18 @@ MonoBehaviour:
   initialFillRows: 4
   preloadRows: 2
   swapDuration: 0.1
-  dropDuration: 0.15
+  dropSpeed: 12
   cursorController: {fileID: 3915118934426842190}
   gridRiser: {fileID: 4701406788802530226}
   matchDetector: {fileID: 1087316669718845505}
   matchProcessor: {fileID: 5347899561248015888}
   tileSpawner: {fileID: 1110068567226200326}
   blockSlipManager: {fileID: 6975869169476460448}
+  garbageManager: {fileID: 5044228106940764647}
+  dangerZoneManager: {fileID: 5324868256448575238}
+  scoreManager: {fileID: 3798992973142588666}
+  useGridContainer: 1
+  gridContainer: {fileID: 619889552529801020}
 --- !u!114 &1087316669718845505
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -87,16 +96,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fbe9bf41ad3f804469bb1c7a4861a02e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  normalRiseSpeed: 0.25
-  fastRiseSpeed: 2
+  baseRiseSpeed: 0.2
+  fastRiseMultiplier: 4
+  speedLevel: 1
+  speedLevelInterval: 45
+  maxSpeedLevel: 99
   gracePeriod: 3
   enableBreathingRoom: 1
   breathingRoomPerTile: 0.2
   maxBreathingRoom: 5
+  breathingRoomFlashSpeed: 2
   catchUpMultiplier: 1.5
-  timeDebtText: {fileID: 0}
-  breathingRoomText: {fileID: 0}
-  gracePeriodText: {fileID: 0}
+  _timeDebtText: {fileID: 0}
+  _breathingRoomText: {fileID: 0}
+  _gracePeriodText: {fileID: 0}
+  _speedLevelText: {fileID: 0}
+  _breathingRoomImage: {fileID: 0}
+  _breathingRoomFlashText: {fileID: 0}
 --- !u!114 &1110068567226200326
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -134,9 +150,11 @@ MonoBehaviour:
   cursorHeight: 1
   cursorColor: {r: 1, g: 1, b: 1, a: 0.5}
   cursorPrefab: {fileID: 1204185684387116732, guid: 5e6392687c4a47942aa8f119ab4548ce, type: 3}
+  isInputEnabled: 1
+  showCursor: 1
   blockSlipColor: {r: 0, g: 1, b: 0.5, a: 0.7}
-  gridManager: {fileID: 2877464028446485601}
-  gridRiser: {fileID: 4701406788802530226}
+  _gridManager: {fileID: 2877464028446485601}
+  _gridRiser: {fileID: 4701406788802530226}
 --- !u!114 &5347899561248015888
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -152,8 +170,8 @@ MonoBehaviour:
   processMatchDuration: 0.5
   blinkSpeed: 0.15
   delayBetweenPops: 0.3
-  scoreManager: {fileID: 0}
-  isProcessingMatches: 0
+  scoreManager: {fileID: 3798992973142588666}
+  garbageManager: {fileID: 5044228106940764647}
 --- !u!114 &6975869169476460448
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -166,3 +184,102 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6abec0a710b776848822c924d4dc4edc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  _swapWithFallingThreshold: 0.5
+  _slideUnderBlockedThreshold: 0.5
+  _showDebugGizmos: 1
+  _showAllRows: 0
+  _debugLineWidth: 6
+  _swapZoneColor: {r: 0, g: 1, b: 0, a: 0.3}
+  _blockedZoneColor: {r: 1, g: 0, b: 0, a: 0.3}
+  _thresholdLineColor: {r: 1, g: 1, b: 0, a: 1}
+  _rowBoundaryColor: {r: 0.5, g: 0.5, b: 0.5, a: 0.4}
+--- !u!114 &5044228106940764647
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 253549084482168555}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f5415014ebe608e4bb477baa6b05fdc6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  garbagePrefab: {fileID: 2825724620208511161, guid: 447c46250572faa47a217c5ba51289b9, type: 3}
+  conversionSettings: {fileID: 11400000, guid: 5a589c17e769ba144a88bc35aa8bb6bb, type: 2}
+  garbageDropDelay: 1
+  maxGarbageWidth: 6
+  maxPendingGarbage: 12
+--- !u!114 &5324868256448575238
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 253549084482168555}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ca9a9ecd5ca4892478496b9e90695bf6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  dangerZoneRows: 3
+  tileWarningMaterial: {fileID: 2100000, guid: 69c21da7beef34943af9230f4efff0af, type: 2}
+  tileCriticalMaterial: {fileID: 2100000, guid: d77e721289255e24d88b152bfcfdd650, type: 2}
+  garbageWarningMaterial: {fileID: 2100000, guid: 0fb93cefba7aa064eb3459f00b720ab5, type: 2}
+  garbageCriticalMaterial: {fileID: 0}
+  showDebugInfo: 0
+--- !u!114 &2170238282710276813
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 253549084482168555}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8bdbb7ab5fa028e4299e0887ad2a28c4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  gridManager: {fileID: 2877464028446485601}
+  garbageRouter: {fileID: 0}
+  playerIndex: 0
+  verticalOffset: 1.5
+  horizontalPadding: 0.25
+  previewScale: 0.4
+  blockGap: 0.1
+  maxVisibleBlocks: 8
+  alignment: 2
+  smallGarbageColor: {r: 0.6, g: 0.6, b: 0.6, a: 1}
+  mediumGarbageColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  largeGarbageColor: {r: 0.4, g: 0.4, b: 0.4, a: 1}
+  dangerousGarbageColor: {r: 0.8, g: 0.3, b: 0.3, a: 1}
+  previewSprite: {fileID: 21300000, guid: 353225c8fb3aeb74aaf0ca93a5927471, type: 3}
+  sortingLayer: Default
+  sortingOrder: 20
+  animateNewBlocks: 1
+  appearDuration: 0.2
+  pulseWhenImminent: 1
+  pulseSpeed: 3
+--- !u!114 &3798992973142588666
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 253549084482168555}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ec993211b0e0d7146a96b8af2cefaedd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pointsPerTile: 100
+  comboMultiplier: 0.5
+  chainBonusPerLevel: 50
+  scorePanel: {fileID: 0}
+  highScoreText: {fileID: 0}
+  scoreText: {fileID: 0}
+  comboText: {fileID: 0}
+  chainText: {fileID: 0}
+  gridRiser: {fileID: 4701406788802530226}
+  comboTimeout: 2
+  chainWindow: 0.5

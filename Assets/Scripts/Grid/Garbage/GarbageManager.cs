@@ -8,6 +8,7 @@ namespace PuzzleAttack.Grid
     /// <summary>
     /// Manages garbage block spawning, falling, cluster detection, and conversion.
     /// Coordinates with GridManager for grid state and TileSpawner for creating converted tiles.
+    /// All positions are relative to the GridManager's transform position.
     /// </summary>
     public class GarbageManager : MonoBehaviour
     {
@@ -299,9 +300,12 @@ namespace PuzzleAttack.Grid
             }
 
             var currentOffset = _gridRiser?.CurrentGridOffset ?? 0f;
-            var pos = new Vector3(x * _gridManager.TileSize, y * _gridManager.TileSize + currentOffset, 0);
             
-            var garbageObj = Instantiate(garbagePrefab, pos, Quaternion.identity, transform);
+            // Use GridManager's position helper for proper offset
+            var pos = _gridManager.GridToWorldPosition(x, y, currentOffset);
+            
+            // Parent under GridContainer so garbage moves with the grid
+            var garbageObj = Instantiate(garbagePrefab, pos, Quaternion.identity, _gridManager.GridContainer);
             garbageObj.name = $"Garbage_{x}_{y}_{width}x{height}";
 
             var block = garbageObj.GetComponent<GarbageBlock>();
@@ -446,10 +450,13 @@ namespace PuzzleAttack.Grid
 
             // Calculate fall targets
             var fallTargets = new Dictionary<GarbageBlock, Vector2Int>();
+            var startPositions = new Dictionary<GarbageBlock, float>(); // Store start Y in grid coords
+            
             foreach (var garbage in _fallingGarbage)
             {
                 var target = CalculateFallTarget(garbage);
                 fallTargets[garbage] = target;
+                startPositions[garbage] = garbage.AnchorPosition.y;
                 
                 // Update grid immediately
                 ClearGarbageFromGrid(garbage);
@@ -474,16 +481,17 @@ namespace PuzzleAttack.Grid
                     if (garbage == null) continue;
 
                     var target = fallTargets[garbage];
-                    var startY = garbage.AnchorPosition.y;
+                    var startY = startPositions[garbage];
                     var progress = Mathf.Clamp01(elapsed / fallDuration);
 
                     var currentY = Mathf.Lerp(startY, target.y, progress);
                     var currentOffset = _gridRiser?.CurrentGridOffset ?? 0f;
 
-                    garbage.transform.position = new Vector3(
-                        garbage.AnchorPosition.x * _gridManager.TileSize,
-                        currentY * _gridManager.TileSize + currentOffset,
-                        0);
+                    // Use GridManager's position helper
+                    garbage.transform.position = _gridManager.GridToWorldPosition(
+                        garbage.AnchorPosition.x, 
+                        (int)currentY, 
+                        currentOffset + (currentY - (int)currentY) * _gridManager.TileSize);
                 }
 
                 elapsed += Time.deltaTime;
@@ -500,10 +508,9 @@ namespace PuzzleAttack.Grid
                 garbage.StopFalling();
 
                 var currentOffset = _gridRiser?.CurrentGridOffset ?? 0f;
-                garbage.transform.position = new Vector3(
-                    target.x * _gridManager.TileSize,
-                    target.y * _gridManager.TileSize + currentOffset,
-                    0);
+                
+                // Use GridManager's position helper
+                garbage.transform.position = _gridManager.GridToWorldPosition(target.x, target.y, currentOffset);
 
                 PlaceGarbageInGrid(garbage);
                 garbage.PlayLandSound();
@@ -856,11 +863,12 @@ namespace PuzzleAttack.Grid
         {
             var currentOffset = _gridRiser?.CurrentGridOffset ?? 0f;
             
-            // Use TileSpawner's tile creation
-            var pos = new Vector3(x * _gridManager.TileSize, y * _gridManager.TileSize + currentOffset, 0);
+            // Use GridManager's position helper
+            var pos = _gridManager.GridToWorldPosition(x, y, currentOffset);
             var typeIndex = Random.Range(0, _tileSpawner.tileSprites.Length);
             
-            var tile = Instantiate(_tileSpawner.tilePrefab, pos, Quaternion.identity, _tileSpawner.transform);
+            // Parent under GridContainer so tile moves with the grid
+            var tile = Instantiate(_tileSpawner.tilePrefab, pos, Quaternion.identity, _gridManager.GridContainer);
             
             var sr = tile.GetComponent<SpriteRenderer>();
             sr.sprite = _tileSpawner.tileSprites[typeIndex];

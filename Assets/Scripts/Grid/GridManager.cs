@@ -8,6 +8,9 @@ namespace PuzzleAttack.Grid
     /// Central grid coordinator. Manages tile array, swap requests, and drop logic.
     /// Delegates animation to TileAnimator and movement logic to BlockSlipManager.
     /// Integrates with GarbageManager for garbage block handling.
+    /// 
+    /// The grid spawns relative to this GameObject's transform position, allowing
+    /// multiple grids to be positioned independently in the scene.
     /// </summary>
     public class GridManager : MonoBehaviour
     {
@@ -35,6 +38,14 @@ namespace PuzzleAttack.Grid
         public BlockSlipManager blockSlipManager;
         public GarbageManager garbageManager;
         public DangerZoneManager dangerZoneManager;
+        public ScoreManager scoreManager;
+
+        [Header("Grid Container")]
+        [Tooltip("If true, creates a container object to parent all grid elements for easy transforms")]
+        public bool useGridContainer = true;
+        
+        [Tooltip("Optional: Assign an existing transform to use as the grid container")]
+        public Transform gridContainer;
 
         #endregion
 
@@ -48,6 +59,9 @@ namespace PuzzleAttack.Grid
         // Track if we're currently in a DropTiles coroutine to prevent re-entry
         private bool _isProcessingDrops;
 
+        // Grid origin in world space (based on this transform's position)
+        private Vector3 _gridOrigin;
+
         #endregion
 
         #region Properties
@@ -57,6 +71,17 @@ namespace PuzzleAttack.Grid
         public int Width => gridWidth;
         public int Height => gridHeight;
         public float TileSize => tileSize;
+        
+        /// <summary>
+        /// The world-space origin of this grid (bottom-left corner).
+        /// </summary>
+        public Vector3 GridOrigin => _gridOrigin;
+        
+        /// <summary>
+        /// The transform that contains all grid elements.
+        /// Use this to move/scale/rotate the entire grid as a unit.
+        /// </summary>
+        public Transform GridContainer => gridContainer;
 
         #endregion
 
@@ -64,6 +89,7 @@ namespace PuzzleAttack.Grid
 
         private void Start()
         {
+            InitializeGridContainer();
             InitializeGridArrays();
             InitializeComponents();
             tileSpawner.CreateBackgroundTiles();
@@ -83,14 +109,47 @@ namespace PuzzleAttack.Grid
             CleanupNullTiles();
             blockSlipManager.CleanupTracking();
             ProcessGarbage();
-            cursorController.HandleInput();
-            HandleSwapInput();
+            
+            // Only handle cursor input if cursorController exists and is enabled
+            if (cursorController != null && cursorController.IsInputEnabled)
+            {
+                cursorController.HandleInput();
+                HandleSwapInput();
+            }
+            
             gridRiser.DisplayDebugInfo();
         }
 
         #endregion
 
         #region Initialization
+
+        private void InitializeGridContainer()
+        {
+            // Store the grid origin based on this transform's position
+            _gridOrigin = transform.position;
+            
+            if (useGridContainer)
+            {
+                if (gridContainer == null)
+                {
+                    // Create a container object to hold all grid elements
+                    var containerObj = new GameObject("GridContainer");
+                    containerObj.transform.SetParent(transform);
+                    containerObj.transform.localPosition = Vector3.zero;
+                    containerObj.transform.localRotation = Quaternion.identity;
+                    containerObj.transform.localScale = Vector3.one;
+                    gridContainer = containerObj.transform;
+                }
+            }
+            else
+            {
+                // Use this transform as the container
+                gridContainer = transform;
+            }
+            
+            Debug.Log($"[GridManager] Grid origin set to {_gridOrigin}");
+        }
 
         private void InitializeGridArrays()
         {
@@ -100,10 +159,37 @@ namespace PuzzleAttack.Grid
 
         private void InitializeComponents()
         {
+            // Auto-detect components if not manually assigned
+            // This allows prefab variants to automatically use their own components
+            if (tileSpawner == null)
+                tileSpawner = GetComponent<TileSpawner>() ?? GetComponentInChildren<TileSpawner>();
+            if (cursorController == null)
+                cursorController = GetComponent<CursorController>() ?? GetComponentInChildren<CursorController>();
+            if (gridRiser == null)
+                gridRiser = GetComponent<GridRiser>() ?? GetComponentInChildren<GridRiser>();
+            if (matchDetector == null)
+                matchDetector = GetComponent<MatchDetector>() ?? GetComponentInChildren<MatchDetector>();
+            if (matchProcessor == null)
+                matchProcessor = GetComponent<MatchProcessor>() ?? GetComponentInChildren<MatchProcessor>();
+            if (blockSlipManager == null)
+                blockSlipManager = GetComponent<BlockSlipManager>() ?? GetComponentInChildren<BlockSlipManager>();
+            if (garbageManager == null)
+                garbageManager = GetComponent<GarbageManager>() ?? GetComponentInChildren<GarbageManager>();
+            if (dangerZoneManager == null)
+                dangerZoneManager = GetComponent<DangerZoneManager>() ?? GetComponentInChildren<DangerZoneManager>();
+            if (scoreManager == null)
+                scoreManager = GetComponent<ScoreManager>() ?? GetComponentInChildren<ScoreManager>();
+
+
             tileSpawner.Initialize(this, tileSize, _grid, _preloadGrid, gridWidth, gridHeight, preloadRows);
-            cursorController.Initialize(this, tileSize, gridWidth, gridHeight, tileSpawner, gridRiser);
+            
+            if (cursorController != null)
+            {
+                cursorController.Initialize(this, tileSize, gridWidth, gridHeight, tileSpawner, gridRiser);
+            }
+            
             matchDetector.Initialize(_grid, gridWidth, gridHeight);
-            matchProcessor.Initialize(this, _grid, matchDetector, garbageManager);
+            matchProcessor.Initialize(this, _grid, matchDetector, garbageManager, scoreManager);
             gridRiser.Initialize(this, _grid, _preloadGrid, tileSpawner, cursorController,
                 matchDetector, matchProcessor, garbageManager, tileSize, gridWidth, gridHeight);
 
@@ -114,6 +200,12 @@ namespace PuzzleAttack.Grid
             garbageManager.Initialize(this, tileSpawner, matchDetector, gridRiser);
             
             dangerZoneManager.Initialize(this, gridRiser, garbageManager);
+            
+            // Initialize ScoreManager's GridRiser reference if not set
+            if (scoreManager != null && scoreManager.gridRiser == null)
+            {
+                scoreManager.gridRiser = gridRiser;
+            }
         }
 
         private IEnumerator InitializeGrid()
@@ -146,13 +238,61 @@ namespace PuzzleAttack.Grid
 
         #endregion
 
+        #region World Position Helpers
+
+        /// <summary>
+        /// Convert grid coordinates to world position.
+        /// </summary>
+        public Vector3 GridToWorldPosition(int gridX, int gridY, float gridOffset = 0f)
+        {
+            return new Vector3(
+                _gridOrigin.x + gridX * tileSize,
+                _gridOrigin.y + gridY * tileSize + gridOffset,
+                _gridOrigin.z
+            );
+        }
+
+        /// <summary>
+        /// Convert grid coordinates to world position.
+        /// </summary>
+        public Vector3 GridToWorldPosition(Vector2Int gridPos, float gridOffset = 0f)
+        {
+            return GridToWorldPosition(gridPos.x, gridPos.y, gridOffset);
+        }
+
+        /// <summary>
+        /// Convert world position to grid coordinates.
+        /// </summary>
+        public Vector2Int WorldToGridPosition(Vector3 worldPos, float gridOffset = 0f)
+        {
+            return new Vector2Int(
+                Mathf.RoundToInt((worldPos.x - _gridOrigin.x) / tileSize),
+                Mathf.RoundToInt((worldPos.y - _gridOrigin.y - gridOffset) / tileSize)
+            );
+        }
+
+        /// <summary>
+        /// Get the center world position of the entire grid.
+        /// </summary>
+        public Vector3 GetGridCenter(float gridOffset = 0f)
+        {
+            return new Vector3(
+                _gridOrigin.x + (gridWidth * tileSize) / 2f - tileSize / 2f,
+                _gridOrigin.y + (gridHeight * tileSize) / 2f + gridOffset - tileSize / 2f,
+                _gridOrigin.z
+            );
+        }
+
+        #endregion
+
         #region Public API
 
         public void SetIsSwapping(bool value) => IsSwapping = value;
 
         public void RequestSwapAtCursor()
         {
-            if (!IsSwapping) StartCoroutine(SwapCursorTiles());
+            if (!IsSwapping && cursorController != null) 
+                StartCoroutine(SwapTilesAtPosition(cursorController.CursorPosition));
         }
 
         public bool IsTileSwapping(GameObject tile) => _swappingTiles.Contains(tile);
@@ -232,11 +372,91 @@ namespace PuzzleAttack.Grid
 
         #endregion
 
+        #region AI Support
+
+        /// <summary>
+        /// Perform a swap at a specific grid position (used by AI).
+        /// </summary>
+        public void PerformSwapAtPosition(Vector2Int position)
+        {
+            if (IsSwapping) return;
+            
+            var leftX = position.x;
+            var rightX = position.x + 1;
+            var y = position.y;
+            
+            // Validate bounds
+            if (leftX < 0 || rightX >= gridWidth || y < 0 || y >= gridHeight)
+            {
+                Debug.LogWarning($"[GridManager] Invalid swap position: ({leftX}, {y})");
+                return;
+            }
+            
+            // Run the same checks as HandleSwapInput
+            var leftTile = _grid[leftX, y];
+            var rightTile = _grid[rightX, y];
+            
+            // Garbage check
+            if (IsGarbageAt(leftX, y) || IsGarbageAt(rightX, y))
+            {
+                Debug.Log(">>> AI SWAP BLOCKED - garbage at position <<<");
+                return;
+            }
+            
+            // Status effect check
+            if (!CanTileSwap(leftX, y) || !CanTileSwap(rightX, y))
+            {
+                Debug.Log(">>> AI SWAP BLOCKED - tile status prevents swap <<<");
+                return;
+            }
+            
+            // Match processing check
+            if (matchProcessor.IsTileBeingProcessed(leftX, y) || matchProcessor.IsTileBeingProcessed(rightX, y))
+            {
+                Debug.Log(">>> AI SWAP BLOCKED - tiles being processed <<<");
+                return;
+            }
+            
+            // Swapping check
+            if ((leftTile != null && _swappingTiles.Contains(leftTile)) || 
+                (rightTile != null && _swappingTiles.Contains(rightTile)))
+            {
+                Debug.Log(">>> AI SWAP BLOCKED - tiles swapping <<<");
+                return;
+            }
+            
+            // Dropping check
+            var leftDropping = leftTile != null && _droppingTiles.Contains(leftTile);
+            var rightDropping = rightTile != null && _droppingTiles.Contains(rightTile);
+            
+            if (leftDropping || rightDropping)
+            {
+                Debug.Log(">>> AI SWAP BLOCKED - tiles dropping <<<");
+                return;
+            }
+            
+            // Held tile check
+            if (garbageManager != null)
+            {
+                if ((leftTile != null && garbageManager.IsTileHeld(leftTile)) ||
+                    (rightTile != null && garbageManager.IsTileHeld(rightTile)))
+                {
+                    Debug.Log(">>> AI SWAP BLOCKED - tiles held during garbage conversion <<<");
+                    return;
+                }
+            }
+            
+            StartCoroutine(SwapTilesAtPosition(position));
+        }
+
+        #endregion
+
         #region Input & Swap Handling
 
         private void HandleSwapInput()
         {
             if (IsSwapping) return;
+            if (cursorController == null) return;
 
             if (!(Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Space)))
                 return;
@@ -328,7 +548,7 @@ namespace PuzzleAttack.Grid
             var rightDropping = rightTile != null && _droppingTiles.Contains(rightTile);
 
             if (!leftDropping && !rightDropping)
-                StartCoroutine(SwapCursorTiles());
+                StartCoroutine(SwapTilesAtPosition(cursorPos));
             else
                 Debug.Log(">>> SWAP BLOCKED - tiles dropping at cursor <<<");
         }
@@ -338,14 +558,13 @@ namespace PuzzleAttack.Grid
             return tile == null || tileSpawner.IsTileActive(tile, gridRiser.CurrentGridOffset);
         }
 
-        private IEnumerator SwapCursorTiles()
+        private IEnumerator SwapTilesAtPosition(Vector2Int position)
         {
             IsSwapping = true;
 
-            var cursorPos = cursorController.CursorPosition;
-            var leftX = cursorPos.x;
-            var rightX = cursorPos.x + 1;
-            var y = cursorPos.y;
+            var leftX = position.x;
+            var rightX = position.x + 1;
+            var y = position.y;
 
             var leftTile = _grid[leftX, y];
             var rightTile = _grid[rightX, y];
@@ -417,10 +636,7 @@ namespace PuzzleAttack.Grid
             if (tile == null) return;
             
             tile.Initialize(pos.Value.x, pos.Value.y, tile.TileType, this);
-            tileObj.transform.position = new Vector3(
-                pos.Value.x * tileSize,
-                pos.Value.y * tileSize + gridRiser.CurrentGridOffset, 
-                0);
+            tileObj.transform.position = GridToWorldPosition(pos.Value, gridRiser.CurrentGridOffset);
         }
 
         /// <summary>
@@ -689,6 +905,47 @@ namespace PuzzleAttack.Grid
             {
                 garbageManager.DropPendingGarbage();
             }
+        }
+
+        #endregion
+
+        #region Debug
+
+        /// <summary>
+        /// Debug method to spawn garbage for testing.
+        /// </summary>
+        [ContextMenu("Spawn Test Garbage 3x1")]
+        public void SpawnTestGarbage3x1()
+        {
+            garbageManager.QueueGarbage(3, 1);
+        }
+
+        [ContextMenu("Spawn Test Garbage 6x2")]
+        public void SpawnTestGarbage6x2()
+        {
+            garbageManager.QueueGarbage(6, 2);
+        }
+
+        [ContextMenu("Spawn Test Garbage 4x3")]
+        public void SpawnTestGarbage4x3()
+        {
+            garbageManager.QueueGarbage(4, 3);
+        }
+
+        private void OnDrawGizmos()
+        {
+            // Draw grid bounds
+            Gizmos.color = new Color(0.5f, 0.5f, 1f, 0.3f);
+            
+            Vector3 origin = Application.isPlaying ? _gridOrigin : transform.position;
+            Vector3 size = new Vector3(gridWidth * tileSize, gridHeight * tileSize, 0.1f);
+            Vector3 center = origin + new Vector3(size.x / 2f - tileSize / 2f, size.y / 2f - tileSize / 2f, 0);
+            
+            Gizmos.DrawWireCube(center, size);
+            
+            // Draw origin marker
+            Gizmos.color = Color.green;
+            Gizmos.DrawSphere(origin, tileSize * 0.2f);
         }
 
         #endregion

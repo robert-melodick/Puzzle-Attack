@@ -1,0 +1,140 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1001 &7368606594354463026
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 253549084482168555, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_Name
+      value: AI_GridManager Variant
+      objectReference: {fileID: 0}
+    - target: {fileID: 619889552529801020, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -6.0760484
+      objectReference: {fileID: 0}
+    - target: {fileID: 619889552529801020, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -2.0832288
+      objectReference: {fileID: 0}
+    - target: {fileID: 619889552529801020, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -0.5835725
+      objectReference: {fileID: 0}
+    - target: {fileID: 619889552529801020, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 619889552529801020, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 619889552529801020, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 619889552529801020, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 619889552529801020, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 619889552529801020, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 619889552529801020, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1110068567226200326, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: garbagePrefab
+      value: 
+      objectReference: {fileID: 2825724620208511161, guid: 447c46250572faa47a217c5ba51289b9, type: 3}
+    - target: {fileID: 1110068567226200326, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: garbageSprite
+      value: 
+      objectReference: {fileID: 21300000, guid: abd722632e0a78a4eb7c63897b500e01, type: 3}
+    - target: {fileID: 2877464028446485601, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: dropSpeed
+      value: 12
+      objectReference: {fileID: 0}
+    - target: {fileID: 2877464028446485601, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: dropDuration
+      value: 0.04
+      objectReference: {fileID: 0}
+    - target: {fileID: 3798992973142588666, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: showScoreUI
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3915118934426842190, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: showCursor
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3915118934426842190, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: isInputEnabled
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: baseRiseSpeed
+      value: 0.2
+      objectReference: {fileID: 0}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: fastRiseMultiplier
+      value: 4
+      objectReference: {fileID: 0}
+    - target: {fileID: 4701406788802530226, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: speedLevelInterval
+      value: 45
+      objectReference: {fileID: 0}
+    - target: {fileID: 5347899561248015888, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      propertyPath: garbageManager
+      value: 
+      objectReference: {fileID: 2324488616822673621}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 253549084482168555, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 4222803843347688299}
+  m_SourcePrefab: {fileID: 100100000, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+--- !u!114 &2324488616822673621 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 5044228106940764647, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+  m_PrefabInstance: {fileID: 7368606594354463026}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7333625067289847769}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f5415014ebe608e4bb477baa6b05fdc6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!1 &7333625067289847769 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 253549084482168555, guid: efa4745d22f2f854a8dba85ac30fe029, type: 3}
+  m_PrefabInstance: {fileID: 7368606594354463026}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &4222803843347688299
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7333625067289847769}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d843a3a37bb1ae6438b094a6851e5c08, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _difficultySettings: {fileID: 11400000, guid: 1b41ba828f96e604dbd2729368b7af0f, type: 2}
+  _cursorPrefab: {fileID: 1204185684387116732, guid: 5e6392687c4a47942aa8f119ab4548ce, type: 3}
+  _cursorColor: {r: 1, g: 1, b: 1, a: 0.7}
+  _cursorSortingOrder: 10
+  _showDebugInfo: 0
+  _logDecisions: 0

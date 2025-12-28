@@ -6,6 +6,7 @@ namespace PuzzleAttack.Grid
     /// <summary>
     /// Core garbage block entity. Represents a single garbage unit that can span multiple grid cells.
     /// The anchor position is the bottom-left corner of the garbage block.
+    /// All positions are relative to the GridManager's transform position.
     /// </summary>
     public class GarbageBlock : MonoBehaviour
     {
@@ -315,23 +316,26 @@ namespace PuzzleAttack.Grid
         /// <summary>
         /// Update the GameObject's world position to match the current anchor.
         /// Called after shrink animation completes.
+        /// Uses GridManager's position helper for proper offset.
         /// </summary>
         public void UpdateVisualPosition(float gridOffset)
         {
+            if (_gridManager == null) return;
+            
             // Keep at original position during shrinking
             if (IsShrinking)
             {
-                transform.position = new Vector3(
-                    AnchorBeforeConversion.x * _gridManager.TileSize,
-                    AnchorBeforeConversion.y * _gridManager.TileSize + gridOffset,
-                    0);
+                transform.position = _gridManager.GridToWorldPosition(
+                    AnchorBeforeConversion.x,
+                    AnchorBeforeConversion.y,
+                    gridOffset);
             }
             else
             {
-                transform.position = new Vector3(
-                    AnchorPosition.x * _gridManager.TileSize,
-                    AnchorPosition.y * _gridManager.TileSize + gridOffset,
-                    0);
+                transform.position = _gridManager.GridToWorldPosition(
+                    AnchorPosition.x,
+                    AnchorPosition.y,
+                    gridOffset);
             }
         }
 
@@ -342,11 +346,13 @@ namespace PuzzleAttack.Grid
         {
             IsShrinking = false;
 
-            // Now update to the final position
-            transform.position = new Vector3(
-                AnchorPosition.x * _gridManager.TileSize,
-                AnchorPosition.y * _gridManager.TileSize + gridOffset,
-                0);
+            if (_gridManager == null) return;
+            
+            // Now update to the final position using grid origin
+            transform.position = _gridManager.GridToWorldPosition(
+                AnchorPosition.x,
+                AnchorPosition.y,
+                gridOffset);
         }
 
         /// <summary>

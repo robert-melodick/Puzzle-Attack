@@ -7,6 +7,7 @@ namespace PuzzleAttack.Grid
     /// <summary>
     /// Processes matches: blink animation, scoring, popping, and cascade handling.
     /// Notifies adjacent tiles (for status effect curing) and garbage blocks (for conversion).
+    /// Tracks chain state for ScoreManager integration.
     /// </summary>
     public class MatchProcessor : MonoBehaviour
     {
@@ -30,28 +31,50 @@ namespace PuzzleAttack.Grid
         private MatchDetector _matchDetector;
         private readonly HashSet<Vector2Int> _processingTiles = new();
         private bool _isProcessingMatches;
+        
+        // Chain tracking
+        private bool _isProcessingCascade;
+        private int _currentChainLevel;
 
         #endregion
 
         #region Properties
 
         public bool IsProcessingMatches => _isProcessingMatches;
+        
+        /// <summary>
+        /// Current chain level (1 = first match, 2+ = cascade matches).
+        /// </summary>
+        public int CurrentChainLevel => _currentChainLevel;
 
         #endregion
 
         #region Initialization
 
-        public void Initialize(GridManager manager, GameObject[,] grid, MatchDetector matchDetector, GarbageManager garbageMgr = null)
+        public void Initialize(GridManager manager, GameObject[,] grid, MatchDetector matchDetector, 
+            GarbageManager garbageMgr = null, ScoreManager scoreMgr = null)
         {
             _gridManager = manager;
             _grid = grid;
             _matchDetector = matchDetector;
 
-            // Set garbage manager reference if provided
             if (garbageMgr != null)
             {
                 garbageManager = garbageMgr;
             }
+            
+            if (scoreMgr != null)
+            {
+                scoreManager = scoreMgr;
+            }
+            
+            // Auto-detect ScoreManager if not provided
+            if (scoreManager == null)
+            {
+                scoreManager = GetComponent<ScoreManager>() ?? GetComponentInParent<ScoreManager>();
+            }
+            
+            Debug.Log($"[MatchProcessor] Initialized with ScoreManager: {scoreManager?.GetInstanceID()}");
         }
 
         #endregion
@@ -65,49 +88,80 @@ namespace PuzzleAttack.Grid
 
         /// <summary>
         /// Check entire grid for matches and process them.
+        /// Used during initialization to clear starting matches.
         /// </summary>
         public IEnumerator CheckAndClearMatches()
         {
             _isProcessingMatches = true;
+            _isProcessingCascade = false;
+            _currentChainLevel = 0;
+            
             var matchGroups = _matchDetector.GetMatchGroups();
 
             while (matchGroups.Count > 0)
             {
                 yield return StartCoroutine(ProcessMatchGroups(matchGroups));
+                
+                // Any subsequent matches are cascades
+                _isProcessingCascade = true;
                 matchGroups = _matchDetector.GetMatchGroups();
             }
 
+            // End combo when all matches are done
             scoreManager?.ResetCombo();
+            
             _isProcessingMatches = false;
+            _isProcessingCascade = false;
+            _currentChainLevel = 0;
         }
 
         /// <summary>
         /// Process a specific list of matched tiles.
+        /// This is the main entry point for player-triggered matches.
         /// </summary>
         public IEnumerator ProcessMatches(List<GameObject> matches)
         {
             if (matches.Count == 0) yield break;
 
             _isProcessingMatches = true;
+            _isProcessingCascade = false;
+            _currentChainLevel = 1;
+            
             var matchGroups = _matchDetector.GroupMatchedTiles(matches);
 
             yield return StartCoroutine(ProcessMatchGroups(matchGroups));
 
             // Check for cascade matches
+            _isProcessingCascade = true;
+            
             var cascadeGroups = _matchDetector.GetMatchGroups();
-            if (cascadeGroups.Count > 0)
+            while (cascadeGroups.Count > 0)
             {
+                // Increment chain level for each cascade
+                _currentChainLevel++;
+                
+                Debug.Log($"[MatchProcessor] Chain x{_currentChainLevel} detected!");
+                
                 var cascadeMatches = new List<GameObject>();
                 foreach (var group in cascadeGroups)
                     cascadeMatches.AddRange(group);
 
-                yield return StartCoroutine(ProcessMatches(cascadeMatches));
+                var cascadeMatchGroups = _matchDetector.GroupMatchedTiles(cascadeMatches);
+                yield return StartCoroutine(ProcessMatchGroups(cascadeMatchGroups));
+                
+                // Check for more cascades
+                cascadeGroups = _matchDetector.GetMatchGroups();
             }
-            else
-            {
-                scoreManager?.ResetCombo();
-                _isProcessingMatches = false;
-            }
+
+            // All matches complete - end combo
+            scoreManager?.ResetCombo();
+            
+            // Notify score manager that drop completed with no more matches
+            scoreManager?.NotifyDropComplete(false);
+            
+            _isProcessingMatches = false;
+            _isProcessingCascade = false;
+            _currentChainLevel = 0;
         }
 
         #endregion
@@ -151,13 +205,17 @@ namespace PuzzleAttack.Grid
 
             yield return StartCoroutine(BlinkTiles(allMatchedTiles, processMatchDuration));
 
-            // Scoring
-            var currentCombo = scoreManager?.GetCombo() ?? 0;
+            // Calculate total tiles matched
             var totalTiles = 0;
             foreach (var group in matchGroups)
                 totalTiles += group.Count;
 
-            scoreManager?.AddScore(totalTiles);
+            // Get current combo before scoring (for breathing room calculation)
+            var currentCombo = scoreManager?.GetCombo() ?? 0;
+
+            // Add score with chain flag
+            // isChainMatch is true if this is a cascade (not the initial player-triggered match)
+            scoreManager?.AddScore(totalTiles, _isProcessingCascade);
 
             // Breathing room for combos (not first match)
             if (currentCombo > 0)
@@ -185,6 +243,9 @@ namespace PuzzleAttack.Grid
                     yield return null;
                 }
             }
+
+            // Notify score manager that tiles are about to fall
+            scoreManager?.NotifyTilesFalling();
 
             yield return StartCoroutine(_gridManager.DropTiles());
         }
@@ -217,8 +278,6 @@ namespace PuzzleAttack.Grid
                         adjTs.OnAdjacentMatch();
                         notifiedPositions.Add(pos);
                     }
-
-                    // Note: Garbage notification is handled separately via GarbageManager
                 }
             }
         }
@@ -261,7 +320,8 @@ namespace PuzzleAttack.Grid
                 var ts = tile.GetComponent<Tile>();
                 if (ts == null) continue;
 
-                ts.PlayMatchSound(combo);
+                // Pass chain level to sound system for escalating pitch/effects
+                ts.PlayMatchSound(combo, _currentChainLevel);
 
                 // Remove from grid
                 _grid[ts.GridX, ts.GridY] = null;

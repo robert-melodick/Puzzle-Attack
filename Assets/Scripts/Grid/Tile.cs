@@ -275,7 +275,7 @@ namespace PuzzleAttack.Grid
                 _audioSource.PlayOneShot(landSound);
         }
 
-        public void PlayMatchSound(int combo = 1)
+        public void PlayMatchSound(int combo = 1, int chain = 1)
         {
             if (matchSound == null || _audioSource == null) return;
             

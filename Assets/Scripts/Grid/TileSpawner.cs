@@ -1,6 +1,5 @@
 using System.Collections;
 using System.Collections.Generic;
-
 using UnityEngine;
 
 namespace PuzzleAttack.Grid
@@ -8,6 +7,7 @@ namespace PuzzleAttack.Grid
     /// <summary>
     /// Spawns tiles, manages preload rows, and handles row spawning during grid rise.
     /// Handles both regular tiles and garbage blocks when shifting the grid.
+    /// All tiles are spawned relative to the GridManager's transform position.
     /// Note: Garbage spawning is handled by GarbageManager.
     /// </summary>
     public class TileSpawner : MonoBehaviour
@@ -54,17 +54,23 @@ namespace PuzzleAttack.Grid
             if (tileBackground == null) return;
 
             for (var x = 0; x < _gridWidth; x++)
-            for (var y = -_preloadRows; y < _gridHeight; y++)
             {
-                var pos = new Vector3(x * _tileSize, y * _tileSize, 0.1f);
-                Instantiate(tileBackground, pos, Quaternion.identity, transform);
+                for (var y = -_preloadRows; y < _gridHeight; y++)
+                {
+                    // Use GridManager's position helper for proper offset
+                    var pos = _gridManager.GridToWorldPosition(x, y, 0f);
+                    pos.z = 0.1f; // Push background behind tiles
+                    
+                    // Parent under GridContainer so background moves with grid
+                    Instantiate(tileBackground, pos, Quaternion.identity, _gridManager.GridContainer);
+                }
             }
         }
 
         #endregion
-        
+
         #region Seeding
-        
+
         /// <summary>
         /// Set a seed for deterministic tile spawning.
         /// Call this before the grid starts initializing.
@@ -96,16 +102,19 @@ namespace PuzzleAttack.Grid
             }
             return Random.Range(0, tileSprites.Length);
         }
-        
+
         #endregion
 
         #region Tile Spawning
 
         public void SpawnTile(int x, int y, float currentGridOffset)
         {
-            var pos = new Vector3(x * _tileSize, y * _tileSize + currentGridOffset, 0);
+            // Use GridManager's position helper
+            var pos = _gridManager.GridToWorldPosition(x, y, currentGridOffset);
             var typeIndex = GetRandomTileType();
-            var tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
+            
+            // Parent under GridContainer
+            var tile = Instantiate(tilePrefab, pos, Quaternion.identity, _gridManager.GridContainer);
 
             var sr = tile.GetComponent<SpriteRenderer>();
             sr.sprite = tileSprites[typeIndex];
@@ -122,10 +131,12 @@ namespace PuzzleAttack.Grid
         /// </summary>
         public GameObject SpawnTileWithType(int x, int y, int typeIndex, float currentGridOffset)
         {
-            var pos = new Vector3(x * _tileSize, y * _tileSize + currentGridOffset, 0);
+            // Use GridManager's position helper
+            var pos = _gridManager.GridToWorldPosition(x, y, currentGridOffset);
             typeIndex = Mathf.Clamp(typeIndex, 0, tileSprites.Length - 1);
-            
-            var tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
+
+            // Parent under GridContainer
+            var tile = Instantiate(tilePrefab, pos, Quaternion.identity, _gridManager.GridContainer);
 
             var sr = tile.GetComponent<SpriteRenderer>();
             sr.sprite = tileSprites[typeIndex];
@@ -135,22 +146,29 @@ namespace PuzzleAttack.Grid
 
             _grid[x, y] = tile;
             UpdateTileActiveState(tile, y, currentGridOffset);
-            
+
             return tile;
         }
 
         public void SpawnPreloadTile(int x, int y, float currentGridOffset)
         {
-            var pos = new Vector3(x * _tileSize, (y - _preloadRows) * _tileSize + currentGridOffset, 0);
+            // Preload tiles are below the visible grid (negative y in grid space)
+            // But stored in preloadGrid at positive indices
+            int visualY = y - _preloadRows; // Convert to visual position below grid
+            
+            // Use GridManager's position helper
+            var pos = _gridManager.GridToWorldPosition(x, visualY, currentGridOffset);
             var typeIndex = GetRandomTileType();
-            var tile = Instantiate(tilePrefab, pos, Quaternion.identity, transform);
+            
+            // Parent under GridContainer
+            var tile = Instantiate(tilePrefab, pos, Quaternion.identity, _gridManager.GridContainer);
 
             var sr = tile.GetComponent<SpriteRenderer>();
             sr.sprite = tileSprites[typeIndex];
             sr.color = Color.gray; // Grayscale until active
 
             var ts = tile.GetComponent<Tile>();
-            ts.Initialize(x, y - _preloadRows, typeIndex, _gridManager);
+            ts.Initialize(x, visualY, typeIndex, _gridManager);
 
             _preloadGrid[x, y] = tile;
         }
@@ -163,13 +181,17 @@ namespace PuzzleAttack.Grid
         {
             if (tile == null) return;
 
-            var worldY = gridY * _tileSize + currentGridOffset;
-            const float visibilityThreshold = 0f;
+            // Calculate world Y position using grid origin
+            var worldY = _gridManager.GridToWorldPosition(0, gridY, currentGridOffset).y;
+            var gridOriginY = _gridManager.GridOrigin.y;
+            
+            // Tile is active if it's at or above the grid origin
+            var isActive = worldY >= gridOriginY;
 
             var sr = tile.GetComponent<SpriteRenderer>();
             if (sr != null)
             {
-                sr.color = worldY >= visibilityThreshold ? Color.white : Color.gray;
+                sr.color = isActive ? Color.white : Color.gray;
             }
         }
 
@@ -179,11 +201,12 @@ namespace PuzzleAttack.Grid
 
             var ts = tile.GetComponent<Tile>();
             if (ts == null) return false;
-            
-            var worldY = ts.GridY * _tileSize + currentGridOffset;
-            const float visibilityThreshold = 0f;
 
-            return worldY >= visibilityThreshold;
+            // Calculate world Y position
+            var worldY = _gridManager.GridToWorldPosition(0, ts.GridY, currentGridOffset).y;
+            var gridOriginY = _gridManager.GridOrigin.y;
+
+            return worldY >= gridOriginY;
         }
 
         #endregion
@@ -196,7 +219,6 @@ namespace PuzzleAttack.Grid
             var processedGarbage = new HashSet<GarbageBlock>();
 
             // First pass: Update garbage blocks before shifting grid
-            // We need to do this separately because garbage spans multiple cells
             for (var x = 0; x < _gridWidth; x++)
             {
                 for (var y = 0; y < _gridHeight; y++)
@@ -208,10 +230,8 @@ namespace PuzzleAttack.Grid
                     var garbageBlock = cell.GetComponent<GarbageBlock>();
                     if (garbageBlock != null && !processedGarbage.Contains(garbageBlock))
                     {
-                        // Don't shift garbage that's falling or converting
                         if (!garbageBlock.IsFalling && !garbageBlock.IsConverting)
                         {
-                            // Shift anchor position up by 1
                             var newAnchorY = garbageBlock.AnchorPosition.y + 1;
                             garbageBlock.SetAnchorPosition(garbageBlock.AnchorPosition.x, newAnchorY);
                         }
@@ -219,7 +239,7 @@ namespace PuzzleAttack.Grid
                         continue;
                     }
 
-                    // Check for garbage reference - just mark the owner as processed
+                    // Check for garbage reference
                     var garbageRef = cell.GetComponent<GarbageReference>();
                     if (garbageRef != null && garbageRef.Owner != null)
                     {
@@ -242,21 +262,22 @@ namespace PuzzleAttack.Grid
                 for (var y = _gridHeight - 1; y > 0; y--)
                 {
                     _grid[x, y] = _grid[x, y - 1];
-                    
+
                     var cell = _grid[x, y];
                     if (cell == null) continue;
                     if (_gridManager.IsTileAnimating(cell)) continue;
 
-                    // Update tile coordinates
+                    // Update tile coordinates and position
                     var tile = cell.GetComponent<Tile>();
                     if (tile != null)
                     {
                         tile.Initialize(x, y, tile.TileType, _gridManager);
+                        
+                        // Update world position
+                        cell.transform.position = _gridManager.GridToWorldPosition(x, y, currentGridOffset);
+                        
                         UpdateTileActiveState(cell, y, currentGridOffset);
                     }
-                    
-                    // Note: Garbage blocks and references don't need individual coordinate updates here
-                    // because we updated the anchor position in the first pass
                 }
 
                 // Move preload tile into main grid at row 0
@@ -268,6 +289,10 @@ namespace PuzzleAttack.Grid
                     if (ts != null)
                     {
                         ts.Initialize(x, 0, ts.TileType, _gridManager);
+                        
+                        // Update world position
+                        tile.transform.position = _gridManager.GridToWorldPosition(x, 0, currentGridOffset);
+                        
                         UpdateTileActiveState(tile, 0, currentGridOffset);
                     }
                 }
@@ -281,27 +306,36 @@ namespace PuzzleAttack.Grid
                         var ts = _preloadGrid[x, py].GetComponent<Tile>();
                         if (ts != null)
                         {
-                            ts.Initialize(x, py - _preloadRows, ts.TileType, _gridManager);
+                            int visualY = py - _preloadRows;
+                            ts.Initialize(x, visualY, ts.TileType, _gridManager);
+                            
+                            // Update world position
+                            _preloadGrid[x, py].transform.position = _gridManager.GridToWorldPosition(x, visualY, currentGridOffset);
                         }
                     }
                 }
 
-                // Spawn new preload tile
+                // Spawn new preload tile at bottom
                 SpawnPreloadTile(x, 0, currentGridOffset);
             }
 
-            cursorController.ShiftCursorUp(_gridHeight, currentGridOffset);
+            if (cursorController != null)
+            {
+                cursorController.ShiftCursorUp(_gridHeight, currentGridOffset);
+            }
         }
 
         public IEnumerator FillEmptySpaces(float currentGridOffset)
         {
             for (var x = 0; x < _gridWidth; x++)
-            for (var y = 0; y < _gridHeight; y++)
             {
-                if (_grid[x, y] == null)
+                for (var y = 0; y < _gridHeight; y++)
                 {
-                    SpawnTile(x, y, currentGridOffset);
-                    yield return new WaitForSeconds(0.05f);
+                    if (_grid[x, y] == null)
+                    {
+                        SpawnTile(x, y, currentGridOffset);
+                        yield return new WaitForSeconds(0.05f);
+                    }
                 }
             }
         }
