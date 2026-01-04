@@ -184,34 +184,38 @@ public class ScoreManager : MonoBehaviour
     /// </summary>
     /// <param name="tilesMatched">Number of tiles in the match</param>
     /// <param name="isChainMatch">True if this match resulted from tiles falling after a previous match</param>
-    public void AddScore(int tilesMatched, bool isChainMatch = false)
+    /// <param name="numMatchGroups">Number of separate match groups (for Panel de Pon combo behavior)</param>
+    public void AddScore(int tilesMatched, bool isChainMatch = false, int numMatchGroups = 1)
     {
         if (tilesMatched <= 0) return;
 
-        // Handle chain logic
-        if (isChainMatch && _isChainActive)
+        // Handle chain logic (Panel de Pon style: only cascades count as chains)
+        if (isChainMatch)
         {
-            // Continue the chain
-            _currentChain++;
-            _chainTimer = 0f;
-            
-            if (_currentChain > _highestChain)
-                _highestChain = _currentChain;
-            
-            if (_currentChain > _maxChainThisCombo)
-                _maxChainThisCombo = _currentChain;
+            if (_isChainActive)
+            {
+                // Continue the chain
+                _currentChain++;
+                _chainTimer = 0f;
 
-            OnChainIncreased?.Invoke(_currentChain);
-            Debug.Log($"[ScoreManager P{_playerIndex}] Chain x{_currentChain}!");
+                if (_currentChain > _highestChain)
+                    _highestChain = _currentChain;
+
+                if (_currentChain > _maxChainThisCombo)
+                    _maxChainThisCombo = _currentChain;
+
+                OnChainIncreased?.Invoke(_currentChain);
+                Debug.Log($"[ScoreManager P{_playerIndex}] Chain x{_currentChain}!");
+            }
+            else
+            {
+                // First cascade - start chain at x2
+                StartChain();
+            }
         }
-        else if (!_isChainActive)
+        else if (_isChainActive)
         {
-            // Start a new chain
-            StartChain();
-        }
-        else
-        {
-            // Non-chain match during active chain - reset chain timer
+            // Non-chain match during active chain - reset chain timer but keep chain active
             _chainTimer = 0f;
         }
 
@@ -227,9 +231,9 @@ public class ScoreManager : MonoBehaviour
         // Calculate points
         int earnedPoints = CalculatePoints(tilesMatched, _currentCombo, _currentChain);
         _currentScore += earnedPoints;
-        
-        // Increment combo
-        _currentCombo++;
+
+        // Increment combo by number of match groups (Panel de Pon style)
+        _currentCombo += numMatchGroups;
 
         if (_currentCombo > _highestCombo)
             _highestCombo = _currentCombo;
@@ -239,7 +243,7 @@ public class ScoreManager : MonoBehaviour
         // Fire event for garbage routing
         OnMatchScored?.Invoke(tilesMatched, _currentCombo, _currentChain);
 
-        Debug.Log($"[ScoreManager P{_playerIndex}] Matched {tilesMatched} tiles | Combo x{_currentCombo} | Chain x{_currentChain} | +{earnedPoints} pts");
+        Debug.Log($"[ScoreManager P{_playerIndex}] Matched {tilesMatched} tiles ({numMatchGroups} groups) | Combo x{_currentCombo} | Chain x{_currentChain} | +{earnedPoints} pts");
     }
 
     /// <summary>
@@ -364,11 +368,14 @@ public class ScoreManager : MonoBehaviour
     private void StartChain()
     {
         _isChainActive = true;
-        _currentChain = 1;
+        _currentChain = 2; // Panel de Pon style: first cascade = chain x2
         _chainTimer = 0f;
-        
+
         if (_currentChain > _maxChainThisCombo)
             _maxChainThisCombo = _currentChain;
+
+        OnChainIncreased?.Invoke(_currentChain);
+        Debug.Log($"[ScoreManager P{_playerIndex}] Chain started at x{_currentChain}");
     }
 
     private void EndChain()

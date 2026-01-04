@@ -20,11 +20,11 @@ namespace PuzzleAttack.UI
         [SerializeField] private ScoreManager scoreManager;
 
         [Header("Spawn Settings")]
-        [Tooltip("Offset from match center position")]
-        [SerializeField] private Vector3 spawnOffset = new Vector3(0.5f, 0.5f, -1f);
-        
-        [Tooltip("Random horizontal spread for multiple popups")]
-        [SerializeField] private float horizontalSpread = 0.5f;
+        [Tooltip("Offset from match center position for combo popups")]
+        [SerializeField] private Vector3 comboSpawnOffset = new Vector3(0.5f, 0.5f, -1f);
+
+        [Tooltip("Offset from match center position for chain popups")]
+        [SerializeField] private Vector3 chainSpawnOffset = new Vector3(1.5f, 1.0f, -1f);
 
         [Header("Display Settings")]
         [Tooltip("Minimum combo count to show popup (1 = show all)")]
@@ -53,6 +53,24 @@ namespace PuzzleAttack.UI
         private void Start()
         {
             // Auto-find references if not assigned
+            TryFindReferences();
+
+            // Subscribe to score manager events
+            TrySubscribeToEvents();
+        }
+
+        private void Update()
+        {
+            // Keep trying to find and subscribe if not yet connected (handles late initialization)
+            if (scoreManager == null)
+            {
+                TryFindReferences();
+                TrySubscribeToEvents();
+            }
+        }
+
+        private void TryFindReferences()
+        {
             if (gridManager == null)
             {
                 gridManager = GetComponent<GridManager>();
@@ -66,22 +84,29 @@ namespace PuzzleAttack.UI
             {
                 scoreManager = gridManager.scoreManager;
             }
+        }
 
-            // Subscribe to score manager events
-            if (scoreManager != null)
+        private bool _isSubscribed = false;
+
+        private void TrySubscribeToEvents()
+        {
+            if (scoreManager != null && !_isSubscribed)
             {
                 scoreManager.OnMatchScored += HandleMatchScored;
                 scoreManager.OnChainIncreased += HandleChainIncreased;
+                _isSubscribed = true;
+                Debug.Log($"[ComboChainPopupSpawner] Successfully subscribed to ScoreManager events");
             }
         }
 
         private void OnDestroy()
         {
             // Unsubscribe from events
-            if (scoreManager != null)
+            if (scoreManager != null && _isSubscribed)
             {
                 scoreManager.OnMatchScored -= HandleMatchScored;
                 scoreManager.OnChainIncreased -= HandleChainIncreased;
+                _isSubscribed = false;
             }
         }
 
@@ -95,7 +120,7 @@ namespace PuzzleAttack.UI
             if (comboStep < minComboToShow) return;
 
             // Spawn combo popup
-            Vector3 spawnPos = GetSpawnPosition();
+            Vector3 spawnPos = GetSpawnPosition(comboSpawnOffset);
             SpawnComboPopup(comboStep, spawnPos);
         }
 
@@ -104,9 +129,8 @@ namespace PuzzleAttack.UI
             if (!showChainPopups) return;
             if (newChainLevel < minChainToShow) return;
 
-            // Spawn chain popup (offset slightly from combo popup)
-            Vector3 spawnPos = GetSpawnPosition();
-            spawnPos += Vector3.right * horizontalSpread;
+            // Spawn chain popup with separate offset
+            Vector3 spawnPos = GetSpawnPosition(chainSpawnOffset);
             SpawnChainPopup(newChainLevel, spawnPos);
         }
 
@@ -178,30 +202,30 @@ namespace PuzzleAttack.UI
 
         #region Position Calculation
 
-        private Vector3 GetSpawnPosition()
+        private Vector3 GetSpawnPosition(Vector3 offset)
         {
             // Try to get the center of the last match
             // If we have match positions stored, use their center
             if (_currentMatchPositions.Count > 0 && gridManager != null)
             {
                 Vector3 center = CalculateMatchCenter(_currentMatchPositions);
-                return center + spawnOffset;
+                return center + offset;
             }
 
             // Fallback: use stored last match center
             if (_lastMatchCenter != Vector3.zero)
             {
-                return _lastMatchCenter + spawnOffset;
+                return _lastMatchCenter + offset;
             }
 
             // Last resort: use grid center
             if (gridManager != null)
             {
                 float gridOffset = gridManager.gridRiser != null ? gridManager.gridRiser.CurrentGridOffset : 0f;
-                return gridManager.GetGridCenter(gridOffset) + spawnOffset;
+                return gridManager.GetGridCenter(gridOffset) + offset;
             }
 
-            return transform.position + spawnOffset;
+            return transform.position + offset;
         }
 
         private Vector3 CalculateMatchCenter(List<Vector2Int> positions)
@@ -255,7 +279,7 @@ namespace PuzzleAttack.UI
         {
             if (comboCount >= minComboToShow)
             {
-                SpawnComboPopup(comboCount, worldPosition + spawnOffset);
+                SpawnComboPopup(comboCount, worldPosition + comboSpawnOffset);
             }
         }
 
@@ -266,7 +290,7 @@ namespace PuzzleAttack.UI
         {
             if (chainCount >= minChainToShow)
             {
-                SpawnChainPopup(chainCount, worldPosition + spawnOffset);
+                SpawnChainPopup(chainCount, worldPosition + chainSpawnOffset);
             }
         }
 

@@ -213,9 +213,10 @@ namespace PuzzleAttack.Grid
             // Get current combo before scoring (for breathing room calculation)
             var currentCombo = scoreManager?.GetCombo() ?? 0;
 
-            // Add score with chain flag
+            // Add score with chain flag and number of match groups
             // isChainMatch is true if this is a cascade (not the initial player-triggered match)
-            scoreManager?.AddScore(totalTiles, _isProcessingCascade);
+            // numGroups determines how much the combo increments (Panel de Pon style)
+            scoreManager?.AddScore(totalTiles, _isProcessingCascade, matchGroups.Count);
 
             // Breathing room for combos (not first match)
             if (currentCombo > 0)

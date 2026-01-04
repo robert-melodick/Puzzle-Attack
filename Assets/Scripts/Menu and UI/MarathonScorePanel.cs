@@ -86,6 +86,16 @@ namespace PuzzleAttack.UI
 
         private void Update()
         {
+            // Try to find ScoreManager if not yet assigned (handles late initialization)
+            if (scoreManager == null)
+            {
+                scoreManager = FindObjectOfType<ScoreManager>();
+                if (scoreManager != null && gridRiser == null)
+                {
+                    gridRiser = scoreManager.gridRiser;
+                }
+            }
+
             // Don't update if paused or game over
             if (GameStateManager.Instance != null)
             {
