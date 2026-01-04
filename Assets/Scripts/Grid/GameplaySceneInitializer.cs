@@ -444,6 +444,9 @@ namespace PuzzleAttack
                 gameSession.SetSeed(manager.SessionSeed);
             }
 
+            // Finalize session (sets up garbage router for VS mode)
+            gameSession.FinalizeSession();
+
             Debug.Log($"[GameplaySceneInitializer] Game session initialized with {_spawnedGrids.Count} grids and {_spawnedAIControllers.Count} AI controllers");
         }
 

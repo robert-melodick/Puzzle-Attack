@@ -10,7 +10,7 @@ namespace PuzzleAttack.Grid
     /// </summary>
     public class GarbageRouter : MonoBehaviour
     {
-        #region Enums
+        #region Enums & Data Structures
 
         /// <summary>
         /// How garbage is distributed when there are multiple opponents.
@@ -19,21 +19,53 @@ namespace PuzzleAttack.Grid
         {
             /// <summary>All garbage goes to the next player in sequence.</summary>
             Sequential,
-            
+
             /// <summary>Garbage is split evenly among all opponents.</summary>
             SplitEvenly,
-            
+
             /// <summary>All garbage goes to all opponents (brutal mode).</summary>
             AllOpponents,
-            
+
             /// <summary>Garbage goes to a randomly selected opponent.</summary>
             Random,
-            
+
             /// <summary>Garbage targets the opponent with the lowest stack.</summary>
             LowestStack,
-            
+
             /// <summary>Garbage targets the opponent with the highest stack.</summary>
             HighestStack
+        }
+
+        /// <summary>
+        /// Defines a garbage block size and its cost in garbage score.
+        /// </summary>
+        [System.Serializable]
+        public class GarbageBlockCost
+        {
+            [Tooltip("Width of the garbage block (in tiles)")]
+            public int width = 1;
+
+            [Tooltip("Height of the garbage block (in tiles)")]
+            public int height = 1;
+
+            [Tooltip("Garbage score required to spawn this block (0 = disabled)")]
+            public int cost = 0;
+
+            public GarbageBlockCost(int w, int h, int c)
+            {
+                width = w;
+                height = h;
+                cost = c;
+            }
+        }
+
+        /// <summary>
+        /// Tracks match data during a combo for score calculation.
+        /// </summary>
+        private class ComboMatchData
+        {
+            public List<int> matchSizes = new List<int>();
+            public int maxChain = 0;
         }
 
         #endregion
@@ -50,18 +82,19 @@ namespace PuzzleAttack.Grid
         [Tooltip("If true, pending garbage can be countered by making matches")]
         public bool allowCountering = true;
 
-        [Header("Garbage Scaling")]
-        [Tooltip("Base garbage lines for a 4-match")]
-        public int baseGarbageFor4Match = 1;
-        
-        [Tooltip("Base garbage lines for a 5-match")]
-        public int baseGarbageFor5Match = 2;
-        
-        [Tooltip("Base garbage lines for a 6+ match")]
-        public int baseGarbageFor6Match = 3;
+        [Header("Garbage Score System")]
+        [Tooltip("Garbage score per match size (index = tiles matched, e.g. [0]=unused, [3]=3-match, [4]=4-match, etc.)")]
+        public int[] matchSizeScores = { 0, 0, 0, 50, 100, 175, 300, 400, 500, 550, 600 };
 
-        [Tooltip("Garbage multiplier per chain level (chain 2 = 1x, chain 3 = 2x, etc.)")]
-        public int[] chainGarbageBonus = { 0, 0, 1, 2, 4, 6, 8, 10 };
+        [Tooltip("Garbage score bonus per combo level (index = combo count, e.g. [1]=1combo=0, [2]=2combo=100, etc.)")]
+        public int[] comboBonusScores = { 0, 0, 100, 150, 200, 250, 300, 350, 400, 450, 500 };
+
+        [Tooltip("Garbage score bonus per chain level (index = chain count, e.g. [1]=1chain=0, [2]=2chain=100, etc.)")]
+        public int[] chainBonusScores = { 0, 0, 100, 200, 300, 400, 500, 600, 700, 800, 900 };
+
+        [Header("Garbage Block Costs")]
+        [Tooltip("Available garbage block sizes and their costs (sorted by cost descending for greedy algorithm)")]
+        public List<GarbageBlockCost> garbageBlockCosts = new List<GarbageBlockCost>();
 
         [Header("Grid References")]
         [Tooltip("All grids participating in VS mode")]
@@ -96,21 +129,21 @@ namespace PuzzleAttack.Grid
 
         #region Private Fields
 
-        // Track pending garbage for each player (waiting to be sent)
-        private int[] _pendingOutgoingGarbage;
-        
-        // Track incoming garbage for each player (can be countered)
-        private int[] _pendingIncomingGarbage;
-        
+        // Track pending garbage score for each player (waiting to be sent)
+        private int[] _pendingOutgoingScore;
+
+        // Track incoming garbage score for each player (can be countered)
+        private int[] _pendingIncomingScore;
+
         // Current target for sequential mode
         private int _sequentialTargetIndex = 0;
-        
-        // Track current chain level for each player
-        private int[] _currentChainLevel;
-        
+
+        // Track combo match data for each player
+        private ComboMatchData[] _comboData;
+
         // Track if a player is currently in an active combo/chain
         private bool[] _isInActiveCombo;
-        
+
         // Random for random targeting mode
         private System.Random _random;
 
@@ -168,14 +201,29 @@ namespace PuzzleAttack.Grid
         public void Initialize()
         {
             int count = grids.Count;
-            
-            _pendingOutgoingGarbage = new int[count];
-            _pendingIncomingGarbage = new int[count];
-            _currentChainLevel = new int[count];
+
+            _pendingOutgoingScore = new int[count];
+            _pendingIncomingScore = new int[count];
+            _comboData = new ComboMatchData[count];
             _isInActiveCombo = new bool[count];
             _matchProcessors = new MatchProcessor[count];
-            
+
+            // Initialize combo data for each player
+            for (int i = 0; i < count; i++)
+            {
+                _comboData[i] = new ComboMatchData();
+            }
+
             _random = new System.Random();
+
+            // Initialize default garbage block costs if list is empty
+            if (garbageBlockCosts.Count == 0)
+            {
+                InitializeDefaultGarbageBlockCosts();
+            }
+
+            // Sort garbage block costs by cost descending (for greedy algorithm)
+            garbageBlockCosts.Sort((a, b) => b.cost.CompareTo(a.cost));
             
             // Subscribe to each grid's match events
             for (int i = 0; i < count; i++)
@@ -246,6 +294,29 @@ namespace PuzzleAttack.Grid
             // For now, the objects will be destroyed together
         }
 
+        /// <summary>
+        /// Initialize default garbage block costs with values up to 6x6.
+        /// </summary>
+        private void InitializeDefaultGarbageBlockCosts()
+        {
+            // Default Garbage Block Costs (sorted by cost descending)
+            garbageBlockCosts.Add(new GarbageBlockCost(6, 6, 10000)); // XXL
+            garbageBlockCosts.Add(new GarbageBlockCost(6, 5, 8000));
+            garbageBlockCosts.Add(new GarbageBlockCost(6, 4, 7000));
+            garbageBlockCosts.Add(new GarbageBlockCost(6, 3, 6000));
+            garbageBlockCosts.Add(new GarbageBlockCost(6, 2, 4000));
+            garbageBlockCosts.Add(new GarbageBlockCost(6, 1, 1500));
+            garbageBlockCosts.Add(new GarbageBlockCost(5, 2, 1000));
+            garbageBlockCosts.Add(new GarbageBlockCost(4, 2, 800));
+            garbageBlockCosts.Add(new GarbageBlockCost(3, 2, 700));
+            garbageBlockCosts.Add(new GarbageBlockCost(5, 1, 600));
+            garbageBlockCosts.Add(new GarbageBlockCost(2, 2, 500));
+            garbageBlockCosts.Add(new GarbageBlockCost(1, 2, 400));
+            garbageBlockCosts.Add(new GarbageBlockCost(1, 1, 250)); // Tiny
+
+            Debug.Log($"[GarbageRouter] Initialized {garbageBlockCosts.Count} default garbage block costs");
+        }
+
         #endregion
 
         #region Event Handlers
@@ -253,8 +324,11 @@ namespace PuzzleAttack.Grid
         private void HandleComboStarted(int playerIndex)
         {
             _isInActiveCombo[playerIndex] = true;
-            _currentChainLevel[playerIndex] = 1;
-            
+
+            // Reset combo data
+            _comboData[playerIndex].matchSizes.Clear();
+            _comboData[playerIndex].maxChain = 0;
+
             if (logGarbageEvents)
                 Debug.Log($"[GarbageRouter] Player {playerIndex} started combo");
         }
@@ -262,56 +336,57 @@ namespace PuzzleAttack.Grid
         private void HandleComboEnded(int playerIndex, int totalCombo, int maxChain)
         {
             _isInActiveCombo[playerIndex] = false;
-            
-            // Send accumulated garbage
-            int garbageToSend = _pendingOutgoingGarbage[playerIndex];
-            if (garbageToSend > 0)
+
+            // Calculate garbage score from the entire combo
+            int garbageScore = CalculateGarbageScore(playerIndex, totalCombo, maxChain);
+
+            if (garbageScore > 0)
             {
-                StartCoroutine(SendGarbageDelayed(playerIndex, garbageToSend));
-                _pendingOutgoingGarbage[playerIndex] = 0;
+                // First try to counter incoming garbage
+                if (allowCountering && _pendingIncomingScore[playerIndex] > 0)
+                {
+                    int countered = Mathf.Min(garbageScore, _pendingIncomingScore[playerIndex]);
+                    _pendingIncomingScore[playerIndex] -= countered;
+                    garbageScore -= countered;
+
+                    OnGarbageCountered?.Invoke(playerIndex, countered, _pendingIncomingScore[playerIndex]);
+
+                    if (logGarbageEvents)
+                        Debug.Log($"[GarbageRouter] Player {playerIndex} countered {countered} score, {_pendingIncomingScore[playerIndex]} remaining");
+                }
+
+                // Send remaining garbage
+                if (garbageScore > 0)
+                {
+                    StartCoroutine(SendGarbageDelayed(playerIndex, garbageScore));
+
+                    if (logGarbageEvents)
+                        Debug.Log($"[GarbageRouter] Player {playerIndex} sending {garbageScore} garbage score");
+                }
             }
-            
-            _currentChainLevel[playerIndex] = 0;
-            
+
+            // Clear combo data
+            _comboData[playerIndex].matchSizes.Clear();
+            _comboData[playerIndex].maxChain = 0;
+
             if (logGarbageEvents)
-                Debug.Log($"[GarbageRouter] Player {playerIndex} ended combo (combo:{totalCombo}, chain:{maxChain})");
+                Debug.Log($"[GarbageRouter] Player {playerIndex} ended combo (combo:{totalCombo}, chain:{maxChain}, score:{garbageScore})");
         }
 
         private void HandleMatchScored(int playerIndex, int tilesMatched, int comboStep, int chainLevel)
         {
-            _currentChainLevel[playerIndex] = chainLevel;
-            
             if (logGarbageEvents)
             {
                 Debug.Log($"[GarbageRouter] HandleMatchScored - Player {playerIndex} ({grids[playerIndex]?.name}) matched {tilesMatched} tiles, combo:{comboStep}, chain:{chainLevel}");
             }
-            
-            // Calculate garbage from this match
-            int garbage = CalculateGarbage(tilesMatched, chainLevel);
-            
-            if (garbage > 0)
+
+            // Track match size
+            _comboData[playerIndex].matchSizes.Add(tilesMatched);
+
+            // Track max chain level
+            if (chainLevel > _comboData[playerIndex].maxChain)
             {
-                // First try to counter incoming garbage
-                if (allowCountering && _pendingIncomingGarbage[playerIndex] > 0)
-                {
-                    int countered = Mathf.Min(garbage, _pendingIncomingGarbage[playerIndex]);
-                    _pendingIncomingGarbage[playerIndex] -= countered;
-                    garbage -= countered;
-                    
-                    OnGarbageCountered?.Invoke(playerIndex, countered, _pendingIncomingGarbage[playerIndex]);
-                    
-                    if (logGarbageEvents)
-                        Debug.Log($"[GarbageRouter] Player {playerIndex} countered {countered} garbage, {_pendingIncomingGarbage[playerIndex]} remaining");
-                }
-                
-                // Accumulate remaining garbage to send
-                if (garbage > 0)
-                {
-                    _pendingOutgoingGarbage[playerIndex] += garbage;
-                    
-                    if (logGarbageEvents)
-                        Debug.Log($"[GarbageRouter] Player {playerIndex} ({grids[playerIndex]?.name}) accumulated {garbage} garbage (total pending: {_pendingOutgoingGarbage[playerIndex]})");
-                }
+                _comboData[playerIndex].maxChain = chainLevel;
             }
         }
 
@@ -320,33 +395,131 @@ namespace PuzzleAttack.Grid
         #region Garbage Calculation
 
         /// <summary>
-        /// Calculate garbage to send based on match size and chain level.
+        /// Calculate total garbage score from all matches in a combo.
         /// </summary>
-        public int CalculateGarbage(int tilesMatched, int chainLevel)
+        private int CalculateGarbageScore(int playerIndex, int totalCombo, int maxChain)
         {
-            int baseGarbage = 0;
-            
-            // Base garbage from match size
-            if (tilesMatched >= 6)
-                baseGarbage = baseGarbageFor6Match;
-            else if (tilesMatched >= 5)
-                baseGarbage = baseGarbageFor5Match;
-            else if (tilesMatched >= 4)
-                baseGarbage = baseGarbageFor4Match;
-            
-            // Chain bonus
-            int chainBonus = 0;
-            if (chainLevel > 1 && chainLevel - 1 < chainGarbageBonus.Length)
+            var comboData = _comboData[playerIndex];
+            int totalScore = 0;
+
+            // Calculate score from each match
+            int matchScore = 0;
+            foreach (int matchSize in comboData.matchSizes)
             {
-                chainBonus = chainGarbageBonus[chainLevel - 1];
+                int score = GetMatchSizeScore(matchSize);
+                matchScore += score;
+
+                if (logGarbageEvents)
+                    Debug.Log($"[GarbageRouter] Match of {matchSize} tiles = {score} score");
             }
-            else if (chainLevel >= chainGarbageBonus.Length)
+            totalScore += matchScore;
+
+            // Add combo bonus
+            int comboBonus = GetComboBonusScore(totalCombo);
+            totalScore += comboBonus;
+
+            // Add chain bonus
+            int chainBonus = GetChainBonusScore(maxChain);
+            totalScore += chainBonus;
+
+            if (logGarbageEvents)
             {
-                // Cap at max defined bonus
-                chainBonus = chainGarbageBonus[chainGarbageBonus.Length - 1];
+                Debug.Log($"[GarbageRouter] Total Garbage Score for Player {playerIndex}:");
+                Debug.Log($"  - Match Score: {matchScore} (from {comboData.matchSizes.Count} matches)");
+                Debug.Log($"  - Combo Bonus: {comboBonus} (combo x{totalCombo})");
+                Debug.Log($"  - Chain Bonus: {chainBonus} (chain x{maxChain})");
+                Debug.Log($"  - TOTAL: {totalScore}");
             }
-            
-            return baseGarbage + chainBonus;
+
+            return totalScore;
+        }
+
+        /// <summary>
+        /// Get garbage score for a specific match size.
+        /// </summary>
+        private int GetMatchSizeScore(int matchSize)
+        {
+            if (matchSize < 0 || matchSize >= matchSizeScores.Length)
+            {
+                // Default to last value for oversized matches
+                if (matchSizeScores.Length > 0)
+                    return matchSizeScores[matchSizeScores.Length - 1];
+                return 0;
+            }
+
+            return matchSizeScores[matchSize];
+        }
+
+        /// <summary>
+        /// Get garbage score bonus for combo count.
+        /// </summary>
+        private int GetComboBonusScore(int comboCount)
+        {
+            if (comboCount < 0 || comboCount >= comboBonusScores.Length)
+            {
+                // Default to last value for high combos
+                if (comboBonusScores.Length > 0)
+                    return comboBonusScores[comboBonusScores.Length - 1];
+                return 0;
+            }
+
+            return comboBonusScores[comboCount];
+        }
+
+        /// <summary>
+        /// Get garbage score bonus for chain level.
+        /// </summary>
+        private int GetChainBonusScore(int chainLevel)
+        {
+            if (chainLevel < 0 || chainLevel >= chainBonusScores.Length)
+            {
+                // Default to last value for high chains
+                if (chainBonusScores.Length > 0)
+                    return chainBonusScores[chainBonusScores.Length - 1];
+                return 0;
+            }
+
+            return chainBonusScores[chainLevel];
+        }
+
+        /// <summary>
+        /// Convert garbage score to list of garbage blocks using greedy algorithm.
+        /// Buys the most expensive blocks first, then continues with remaining score.
+        /// </summary>
+        private List<(int width, int height)> ConvertScoreToBlocks(int score)
+        {
+            var blocks = new List<(int width, int height)>();
+            int remainingScore = score;
+
+            if (logGarbageEvents)
+                Debug.Log($"[GarbageRouter] Converting {score} score to garbage blocks...");
+
+            // Greedy algorithm: buy most expensive blocks first
+            foreach (var blockCost in garbageBlockCosts)
+            {
+                // Skip disabled blocks (cost = 0)
+                if (blockCost.cost <= 0) continue;
+
+                // Buy as many of this block as we can afford
+                while (remainingScore >= blockCost.cost)
+                {
+                    blocks.Add((blockCost.width, blockCost.height));
+                    remainingScore -= blockCost.cost;
+
+                    if (logGarbageEvents)
+                        Debug.Log($"[GarbageRouter]   Bought {blockCost.width}x{blockCost.height} for {blockCost.cost}, remaining: {remainingScore}");
+                }
+            }
+
+            if (remainingScore > 0 && logGarbageEvents)
+            {
+                Debug.Log($"[GarbageRouter]   Leftover score: {remainingScore} (wasted)");
+            }
+
+            if (logGarbageEvents)
+                Debug.Log($"[GarbageRouter]   Total blocks spawned: {blocks.Count}");
+
+            return blocks;
         }
 
         #endregion
@@ -526,22 +699,22 @@ namespace PuzzleAttack.Grid
             return maxY;
         }
 
-        private void QueueGarbageForPlayer(int senderIndex, int targetIndex, int amount)
+        private void QueueGarbageForPlayer(int senderIndex, int targetIndex, int score)
         {
             if (targetIndex < 0 || targetIndex >= grids.Count) return;
             if (grids[targetIndex] == null) return;
-            
-            // Add to pending incoming (can be countered)
-            _pendingIncomingGarbage[targetIndex] += amount;
-            
-            OnGarbageSent?.Invoke(senderIndex, targetIndex, amount);
-            
+
+            // Add to pending incoming score (can be countered)
+            _pendingIncomingScore[targetIndex] += score;
+
+            OnGarbageSent?.Invoke(senderIndex, targetIndex, score);
+
             if (logGarbageEvents)
             {
-                Debug.Log($"[GarbageRouter] Player {senderIndex} -> Player {targetIndex}: {amount} garbage queued");
+                Debug.Log($"[GarbageRouter] Player {senderIndex} -> Player {targetIndex}: {score} garbage score queued");
                 Debug.Log($"[GarbageRouter] Target grid: {grids[targetIndex].name}, GarbageManager: {grids[targetIndex].garbageManager?.GetInstanceID()}");
             }
-            
+
             // If the target is not in an active combo, deliver immediately
             if (!_isInActiveCombo[targetIndex])
             {
@@ -551,64 +724,36 @@ namespace PuzzleAttack.Grid
 
         private void DeliverPendingGarbage(int playerIndex)
         {
-            int amount = _pendingIncomingGarbage[playerIndex];
-            if (amount <= 0) return;
-            
-            _pendingIncomingGarbage[playerIndex] = 0;
-            
+            int score = _pendingIncomingScore[playerIndex];
+            if (score <= 0) return;
+
+            _pendingIncomingScore[playerIndex] = 0;
+
             var targetGrid = grids[playerIndex];
             var garbageManager = targetGrid?.garbageManager;
             if (garbageManager == null) return;
-            
+
             if (logGarbageEvents)
             {
-                Debug.Log($"[GarbageRouter] Delivering {amount} garbage to Player {playerIndex}");
+                Debug.Log($"[GarbageRouter] Delivering {score} garbage score to Player {playerIndex}");
                 Debug.Log($"[GarbageRouter] Target grid name: {targetGrid.name}");
                 Debug.Log($"[GarbageRouter] Target grid position: {targetGrid.transform.position}");
                 Debug.Log($"[GarbageRouter] GarbageManager instance: {garbageManager.GetInstanceID()}");
             }
-            
-            // Convert garbage amount to actual garbage blocks
-            // Standard: 1 "garbage line" = 1 row of width-sized garbage
-            // But we can vary the width for variety
-            DeliverGarbageBlocks(garbageManager, amount, targetGrid.Width);
-            
-            OnGarbageReceived?.Invoke(playerIndex, amount);
-            
-            if (logGarbageEvents)
-                Debug.Log($"[GarbageRouter] Delivered {amount} garbage to Player {playerIndex}");
-        }
 
-        private void DeliverGarbageBlocks(GarbageManager garbageManager, int totalLines, int gridWidth)
-        {
-            // Strategy: 
-            // - Large amounts (4+) become full-width tall blocks
-            // - Smaller amounts become narrower blocks or multiple small blocks
-            
-            int remaining = totalLines;
-            
-            while (remaining > 0)
+            // Convert score to garbage blocks using greedy algorithm
+            var blocks = ConvertScoreToBlocks(score);
+
+            // Queue each block to the garbage manager
+            foreach (var (width, height) in blocks)
             {
-                if (remaining >= 4)
-                {
-                    // Full-width 4-row garbage (the scary kind)
-                    garbageManager.QueueGarbage(gridWidth, 4);
-                    remaining -= 4;
-                }
-                else if (remaining >= 2)
-                {
-                    // Full-width 2-row garbage
-                    garbageManager.QueueGarbage(gridWidth, 2);
-                    remaining -= 2;
-                }
-                else
-                {
-                    // Single row, variable width
-                    int width = Mathf.Max(3, gridWidth - 2); // Slightly narrower for 1-line garbage
-                    garbageManager.QueueGarbage(width, 1);
-                    remaining -= 1;
-                }
+                garbageManager.QueueGarbage(width, height);
             }
+
+            OnGarbageReceived?.Invoke(playerIndex, score);
+
+            if (logGarbageEvents)
+                Debug.Log($"[GarbageRouter] Delivered {blocks.Count} garbage blocks (from {score} score) to Player {playerIndex}");
         }
 
         #endregion
@@ -616,23 +761,23 @@ namespace PuzzleAttack.Grid
         #region Public API
 
         /// <summary>
-        /// Get pending incoming garbage for a player (can be countered).
+        /// Get pending incoming garbage score for a player (can be countered).
         /// </summary>
         public int GetPendingIncomingGarbage(int playerIndex)
         {
-            if (_pendingIncomingGarbage == null || playerIndex < 0 || playerIndex >= _pendingIncomingGarbage.Length)
+            if (_pendingIncomingScore == null || playerIndex < 0 || playerIndex >= _pendingIncomingScore.Length)
                 return 0;
-            return _pendingIncomingGarbage[playerIndex];
+            return _pendingIncomingScore[playerIndex];
         }
 
         /// <summary>
-        /// Get pending outgoing garbage for a player (accumulated during combo).
+        /// Get current match count during active combo for a player.
         /// </summary>
         public int GetPendingOutgoingGarbage(int playerIndex)
         {
-            if (_pendingOutgoingGarbage == null || playerIndex < 0 || playerIndex >= _pendingOutgoingGarbage.Length)
+            if (_comboData == null || playerIndex < 0 || playerIndex >= _comboData.Length)
                 return 0;
-            return _pendingOutgoingGarbage[playerIndex];
+            return _comboData[playerIndex].matchSizes.Count;
         }
 
         /// <summary>
@@ -640,9 +785,9 @@ namespace PuzzleAttack.Grid
         /// </summary>
         public int GetCurrentChainLevel(int playerIndex)
         {
-            if (_currentChainLevel == null || playerIndex < 0 || playerIndex >= _currentChainLevel.Length)
+            if (_comboData == null || playerIndex < 0 || playerIndex >= _comboData.Length)
                 return 0;
-            return _currentChainLevel[playerIndex];
+            return _comboData[playerIndex].maxChain;
         }
 
         /// <summary>
@@ -664,12 +809,12 @@ namespace PuzzleAttack.Grid
         }
 
         /// <summary>
-        /// Manually send garbage from one player to another (for testing or special mechanics).
+        /// Manually send garbage score from one player to another (for testing or special mechanics).
         /// </summary>
-        public void ManualSendGarbage(int senderIndex, int targetIndex, int amount)
+        public void ManualSendGarbage(int senderIndex, int targetIndex, int score)
         {
-            QueueGarbageForPlayer(senderIndex, targetIndex, amount);
-            
+            QueueGarbageForPlayer(senderIndex, targetIndex, score);
+
             if (!_isInActiveCombo[targetIndex])
             {
                 DeliverPendingGarbage(targetIndex);
@@ -681,10 +826,11 @@ namespace PuzzleAttack.Grid
         /// </summary>
         public void ClearPendingGarbage(int playerIndex)
         {
-            if (playerIndex >= 0 && playerIndex < _pendingIncomingGarbage.Length)
+            if (playerIndex >= 0 && playerIndex < _pendingIncomingScore.Length)
             {
-                _pendingIncomingGarbage[playerIndex] = 0;
-                _pendingOutgoingGarbage[playerIndex] = 0;
+                _pendingIncomingScore[playerIndex] = 0;
+                _comboData[playerIndex].matchSizes.Clear();
+                _comboData[playerIndex].maxChain = 0;
             }
         }
 
@@ -695,20 +841,22 @@ namespace PuzzleAttack.Grid
         private void OnGUI()
         {
             if (!logGarbageEvents) return;
-            if (_pendingIncomingGarbage == null) return; // Not initialized yet
-            
-            GUILayout.BeginArea(new Rect(10, Screen.height - 150, 300, 140));
+            if (_pendingIncomingScore == null) return; // Not initialized yet
+
+            GUILayout.BeginArea(new Rect(10, Screen.height - 180, 350, 170));
             GUILayout.BeginVertical("box");
-            
-            GUILayout.Label("<b>Garbage Router</b>");
+
+            GUILayout.Label("<b>Garbage Router (Score System)</b>");
             GUILayout.Label($"Mode: {targetingMode}");
-            
-            for (int i = 0; i < grids.Count && i < _pendingIncomingGarbage.Length; i++)
+
+            for (int i = 0; i < grids.Count && i < _pendingIncomingScore.Length; i++)
             {
                 string status = _isInActiveCombo[i] ? " [COMBO]" : "";
-                GUILayout.Label($"P{i}: In:{_pendingIncomingGarbage[i]} Out:{_pendingOutgoingGarbage[i]} Chain:{_currentChainLevel[i]}{status}");
+                int matches = _comboData[i].matchSizes.Count;
+                int chain = _comboData[i].maxChain;
+                GUILayout.Label($"P{i}: InScore:{_pendingIncomingScore[i]} Matches:{matches} Chain:{chain}{status}");
             }
-            
+
             GUILayout.EndVertical();
             GUILayout.EndArea();
         }

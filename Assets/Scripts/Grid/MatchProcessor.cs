@@ -205,18 +205,24 @@ namespace PuzzleAttack.Grid
 
             yield return StartCoroutine(BlinkTiles(allMatchedTiles, processMatchDuration));
 
-            // Calculate total tiles matched
-            var totalTiles = 0;
-            foreach (var group in matchGroups)
-                totalTiles += group.Count;
-
             // Get current combo before scoring (for breathing room calculation)
             var currentCombo = scoreManager?.GetCombo() ?? 0;
 
-            // Add score with chain flag and number of match groups
-            // isChainMatch is true if this is a cascade (not the initial player-triggered match)
-            // numGroups determines how much the combo increments (Panel de Pon style)
-            scoreManager?.AddScore(totalTiles, _isProcessingCascade, matchGroups.Count);
+            // Process each match group separately for scoring and garbage
+            // Panel de Pon style: each group contributes garbage based on its own size
+            foreach (var group in matchGroups)
+            {
+                int groupSize = group.Count;
+                // Add score for this group
+                // isChainMatch is true if this is a cascade (not the initial player-triggered match)
+                // numGroups = 1 since we're processing each group individually
+                scoreManager?.AddScore(groupSize, _isProcessingCascade, 1);
+            }
+
+            // Calculate total tiles for breathing room
+            var totalTiles = 0;
+            foreach (var group in matchGroups)
+                totalTiles += group.Count;
 
             // Breathing room for combos (not first match)
             if (currentCombo > 0)

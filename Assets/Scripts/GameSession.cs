@@ -26,6 +26,10 @@ namespace PuzzleAttack.Grid
         [Tooltip("AI controllers (if any) - will be initialized with session seed")]
         [SerializeField] private List<AI.AIController> _aiControllers = new List<AI.AIController>();
 
+        [Header("Garbage Routing (VS Mode)")]
+        [Tooltip("Garbage router for VS mode - automatically created if more than 1 player")]
+        [SerializeField] private GarbageRouter _garbageRouter;
+
         #endregion
 
         #region Private Fields
@@ -51,6 +55,11 @@ namespace PuzzleAttack.Grid
         /// Number of players/grids in this session.
         /// </summary>
         public int PlayerCount => _gridInstances.Count;
+
+        /// <summary>
+        /// The garbage router for this session (VS mode only).
+        /// </summary>
+        public GarbageRouter GarbageRouter => _garbageRouter;
 
         #endregion
 
@@ -107,6 +116,9 @@ namespace PuzzleAttack.Grid
                 Debug.Log($"[GameSession] AI {i} seeded with: {aiSeed}");
             }
 
+            // Note: GarbageRouter initialization is deferred to FinalizeSession()
+            // because grids are added after InitializeSession() is called
+
             _isInitialized = true;
         }
 
@@ -161,6 +173,72 @@ namespace PuzzleAttack.Grid
         {
             // Generate a seed that's easy to share/remember (5 digits)
             return Random.Range(10000, 99999);
+        }
+
+        /// <summary>
+        /// Finalize session setup after all grids have been added.
+        /// Call this from GameplaySceneInitializer after adding all grids.
+        /// </summary>
+        public void FinalizeSession()
+        {
+            Debug.Log($"[GameSession] Finalizing session with {_gridInstances.Count} grids");
+
+            // Debug: Log each grid's components
+            for (int i = 0; i < _gridInstances.Count; i++)
+            {
+                var grid = _gridInstances[i];
+                if (grid != null)
+                {
+                    Debug.Log($"[GameSession] Grid {i}: {grid.name}");
+                    Debug.Log($"[GameSession]   - ScoreManager: {(grid.scoreManager != null ? grid.scoreManager.GetInstanceID().ToString() : "NULL")}");
+                    Debug.Log($"[GameSession]   - MatchProcessor: {(grid.matchProcessor != null ? grid.matchProcessor.GetInstanceID().ToString() : "NULL")}");
+                    Debug.Log($"[GameSession]   - GarbageManager: {(grid.garbageManager != null ? grid.garbageManager.GetInstanceID().ToString() : "NULL")}");
+                }
+            }
+
+            // Initialize garbage router for VS mode (2+ players)
+            InitializeGarbageRouter();
+        }
+
+        /// <summary>
+        /// Initialize garbage router for VS mode (2+ players).
+        /// Creates and configures the GarbageRouter if needed.
+        /// </summary>
+        private void InitializeGarbageRouter()
+        {
+            // Only initialize for VS mode (2+ players)
+            if (_gridInstances.Count < 2)
+            {
+                Debug.Log("[GameSession] Single player mode - skipping garbage router initialization");
+                return;
+            }
+
+            // Find or create garbage router
+            if (_garbageRouter == null)
+            {
+                _garbageRouter = GetComponent<GarbageRouter>();
+
+                if (_garbageRouter == null)
+                {
+                    _garbageRouter = gameObject.AddComponent<GarbageRouter>();
+                    Debug.Log("[GameSession] Created GarbageRouter component");
+                }
+            }
+
+            // Clear and repopulate grids list
+            _garbageRouter.grids.Clear();
+            foreach (var grid in _gridInstances)
+            {
+                if (grid != null)
+                {
+                    _garbageRouter.grids.Add(grid);
+                }
+            }
+
+            // Reinitialize the garbage router with updated grid list
+            _garbageRouter.Initialize();
+
+            Debug.Log($"[GameSession] GarbageRouter initialized with {_garbageRouter.grids.Count} grids");
         }
 
         #endregion

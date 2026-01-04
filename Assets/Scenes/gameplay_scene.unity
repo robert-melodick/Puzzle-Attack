@@ -1451,11 +1451,11 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 332615300080627554, guid: f58ec49d94507034ea441332c512b5ef, type: 3}
       propertyPath: testModeType
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 332615300080627554, guid: f58ec49d94507034ea441332c512b5ef, type: 3}
       propertyPath: testPlayerCount
-      value: 1
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 332615300080627554, guid: f58ec49d94507034ea441332c512b5ef, type: 3}
       propertyPath: useTestConfiguration

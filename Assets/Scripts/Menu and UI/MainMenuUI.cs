@@ -71,10 +71,12 @@ public class MainMenuUI : MonoBehaviour
     [Header("VS Setup - 1v1 Arcade Style")]
     [SerializeField] private PlayerSlotUI vsPlayer1Slot;
     [SerializeField] private PlayerSlotUI vsPlayer2Slot;
+    [SerializeField] private TMP_Dropdown vsGridDifficultyDropdown;
+    [SerializeField] private TMP_Dropdown vsGridSpeedDropdown;
     [SerializeField] private TextMeshProUGUI vsStatusText;
     [SerializeField] private Button vsStartButton;
     [SerializeField] private Button vsBackButton;
-    
+
     [Header("VS Mode - Player 2 Join")]
     [SerializeField] private TextMeshProUGUI player2JoinPrompt;
 
@@ -167,7 +169,7 @@ public class MainMenuUI : MonoBehaviour
             }
             marathonDifficultyDropdown.AddOptions(options);
             marathonDifficultyDropdown.onValueChanged.AddListener(OnMarathonDifficultyChanged);
-            
+
             // Default to Normal
             int normalIndex = gridDifficulties.FindIndex(d => d.displayName.ToLower() == "normal");
             marathonDifficultyDropdown.value = Mathf.Max(0, normalIndex);
@@ -183,6 +185,34 @@ public class MainMenuUI : MonoBehaviour
                 speedOptions.Add($"Level {i}");
             }
             marathonSpeedDropdown.AddOptions(speedOptions);
+        }
+
+        // VS mode grid difficulty dropdown
+        if (vsGridDifficultyDropdown != null && gridDifficulties.Count > 0)
+        {
+            vsGridDifficultyDropdown.ClearOptions();
+            var options = new List<string>();
+            foreach (var diff in gridDifficulties)
+            {
+                options.Add(diff.displayName);
+            }
+            vsGridDifficultyDropdown.AddOptions(options);
+
+            // Default to Normal
+            int normalIndex = gridDifficulties.FindIndex(d => d.displayName.ToLower() == "normal");
+            vsGridDifficultyDropdown.value = Mathf.Max(0, normalIndex);
+        }
+
+        // VS mode grid speed dropdown
+        if (vsGridSpeedDropdown != null)
+        {
+            vsGridSpeedDropdown.ClearOptions();
+            var speedOptions = new List<string>();
+            for (int i = 1; i <= 20; i++)
+            {
+                speedOptions.Add($"Level {i}");
+            }
+            vsGridSpeedDropdown.AddOptions(speedOptions);
         }
     }
 
@@ -330,22 +360,26 @@ public class MainMenuUI : MonoBehaviour
 
     private void InitializeVsMode()
     {
-        // Initialize Player 1 slot (always human, locked)
+        // Initialize Player 1 slot (Human by default, can be toggled)
         if (vsPlayer1Slot != null)
         {
             vsPlayer1Slot.Initialize(0, gridDifficulties, aiDifficulties, OnVsSlotChanged);
             vsPlayer1Slot.SetMode(PlayerSlotUI.SlotMode.Human);
-            vsPlayer1Slot.SetLocked(true);
+            vsPlayer1Slot.SetLocked(false); // Allow toggling between Human/CPU/Empty
             vsPlayer1Slot.SetInputDeviceAvailable(true);
+            // Hide per-player grid settings (using global VS settings instead)
+            vsPlayer1Slot.ShowSettings(false);
         }
 
-        // Initialize Player 2 slot (CPU by default, can be joined by human)
+        // Initialize Player 2 slot (CPU by default, can be toggled or joined)
         if (vsPlayer2Slot != null)
         {
             vsPlayer2Slot.Initialize(1, gridDifficulties, aiDifficulties, OnVsSlotChanged);
             vsPlayer2Slot.SetMode(PlayerSlotUI.SlotMode.CPU);
             vsPlayer2Slot.SetLocked(false);
             vsPlayer2Slot.SetInputDeviceAvailable(HasSecondInputDevice());
+            // Hide per-player grid settings (using global VS settings instead)
+            vsPlayer2Slot.ShowSettings(false);
         }
 
         UpdateVsStatus();
@@ -360,25 +394,36 @@ public class MainMenuUI : MonoBehaviour
     {
         if (vsStatusText == null) return;
 
+        bool p1IsHuman = vsPlayer1Slot != null && vsPlayer1Slot.IsHuman;
+        bool p1IsCPU = vsPlayer1Slot != null && vsPlayer1Slot.IsCPU;
+        bool p1IsActive = vsPlayer1Slot != null && vsPlayer1Slot.IsActive;
+
         bool p2IsHuman = vsPlayer2Slot != null && vsPlayer2Slot.IsHuman;
         bool p2IsCPU = vsPlayer2Slot != null && vsPlayer2Slot.IsCPU;
+        bool p2IsActive = vsPlayer2Slot != null && vsPlayer2Slot.IsActive;
 
-        if (p2IsHuman)
+        int activeCount = (p1IsActive ? 1 : 0) + (p2IsActive ? 1 : 0);
+
+        // Build status text based on slot configuration
+        if (activeCount < 2)
         {
-            vsStatusText.text = "Player vs Player - Ready!";
+            vsStatusText.text = "Need 2 Players!";
+            if (vsStartButton != null) vsStartButton.interactable = false;
         }
-        else if (p2IsCPU)
+        else
         {
-            var config = vsPlayer2Slot.GetConfig();
-            string aiName = config.aiDifficulty?.displayName ?? "CPU";
-            vsStatusText.text = $"Player vs {aiName}";
+            string p1Name = p1IsHuman ? "Player" : (vsPlayer1Slot.GetConfig().aiDifficulty?.displayName ?? "CPU");
+            string p2Name = p2IsHuman ? "Player" : (vsPlayer2Slot.GetConfig().aiDifficulty?.displayName ?? "CPU");
+            vsStatusText.text = $"{p1Name} vs {p2Name} - Ready!";
+            if (vsStartButton != null) vsStartButton.interactable = true;
         }
 
         // Update join prompt
         if (player2JoinPrompt != null)
         {
-            player2JoinPrompt.gameObject.SetActive(!p2IsHuman && HasSecondInputDevice());
-            if (!p2IsHuman)
+            bool canJoin = !p2IsHuman && p2IsCPU && HasSecondInputDevice();
+            player2JoinPrompt.gameObject.SetActive(canJoin);
+            if (canJoin)
             {
                 player2JoinPrompt.text = "Player 2: Press Start to Join!";
             }
@@ -442,16 +487,51 @@ public class MainMenuUI : MonoBehaviour
     {
         var manager = GameModeManager.Instance;
 
-        // Set mode based on whether P2 is human or CPU
+        // Determine mode type based on player composition
+        bool p1IsHuman = vsPlayer1Slot != null && vsPlayer1Slot.IsHuman;
         bool p2IsHuman = vsPlayer2Slot != null && vsPlayer2Slot.IsHuman;
-        var mode = gameModes.Find(m => m.modeType == (p2IsHuman ? GameModeType.VsHuman : GameModeType.VsCPU));
+
+        GameModeType modeType;
+        if (p1IsHuman && p2IsHuman)
+        {
+            modeType = GameModeType.VsHuman; // Human vs Human
+        }
+        else if (!p1IsHuman && !p2IsHuman)
+        {
+            modeType = GameModeType.VsCPU; // CPU vs CPU (use VsCPU or create spectator mode)
+        }
+        else
+        {
+            modeType = GameModeType.VsCPU; // Human vs CPU or CPU vs Human
+        }
+
+        var mode = gameModes.Find(m => m.modeType == modeType);
         manager.SetGameMode(mode);
 
-        // Configure slots
-        if (vsPlayer1Slot != null)
-            manager.ConfigurePlayerSlot(0, vsPlayer1Slot.GetConfig());
-        if (vsPlayer2Slot != null)
-            manager.ConfigurePlayerSlot(1, vsPlayer2Slot.GetConfig());
+        // Get grid difficulty and speed settings
+        GridDifficultySettings gridDiff = null;
+        if (vsGridDifficultyDropdown != null && vsGridDifficultyDropdown.value < gridDifficulties.Count)
+        {
+            gridDiff = gridDifficulties[vsGridDifficultyDropdown.value];
+        }
+
+        int startingSpeed = (vsGridSpeedDropdown?.value ?? 0) + 1;
+
+        // Configure slots with grid settings
+        if (vsPlayer1Slot != null && vsPlayer1Slot.IsActive)
+        {
+            var config = vsPlayer1Slot.GetConfig();
+            config.gridDifficulty = gridDiff;
+            config.startingSpeed = startingSpeed;
+            manager.ConfigurePlayerSlot(0, config);
+        }
+        if (vsPlayer2Slot != null && vsPlayer2Slot.IsActive)
+        {
+            var config = vsPlayer2Slot.GetConfig();
+            config.gridDifficulty = gridDiff;
+            config.startingSpeed = startingSpeed;
+            manager.ConfigurePlayerSlot(1, config);
+        }
 
         manager.SetPlayerCount(2);
 
