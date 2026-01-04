@@ -3,8 +3,9 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// Manages score, combo, and chain tracking.
+/// Manages score, combo, and chain tracking for a single grid.
 /// Fires events for garbage routing in VS mode.
+/// Each grid has its own ScoreManager instance.
 /// </summary>
 public class ScoreManager : MonoBehaviour
 {
@@ -52,6 +53,10 @@ public class ScoreManager : MonoBehaviour
     private float _chainTimer;
     private bool _isChainActive;
 
+    // Player identification
+    private int _playerIndex = 0;
+    private bool _isHumanPlayer = true;
+
     #endregion
 
     #region Properties
@@ -63,6 +68,26 @@ public class ScoreManager : MonoBehaviour
     public int HighestChain => _highestChain;
     public bool IsInCombo => _isInCombo;
     public bool IsChainActive => _isChainActive;
+
+    /// <summary>
+    /// The player index this ScoreManager belongs to (0-3).
+    /// Set by GameplaySceneInitializer.
+    /// </summary>
+    public int PlayerIndex
+    {
+        get => _playerIndex;
+        set => _playerIndex = value;
+    }
+
+    /// <summary>
+    /// Whether this ScoreManager belongs to a human player.
+    /// Used for high score saving (only save human scores).
+    /// </summary>
+    public bool IsHumanPlayer
+    {
+        get => _isHumanPlayer;
+        set => _isHumanPlayer = value;
+    }
 
     #endregion
 
@@ -177,7 +202,7 @@ public class ScoreManager : MonoBehaviour
                 _maxChainThisCombo = _currentChain;
 
             OnChainIncreased?.Invoke(_currentChain);
-            Debug.Log($"[ScoreManager] Chain x{_currentChain}!");
+            Debug.Log($"[ScoreManager P{_playerIndex}] Chain x{_currentChain}!");
         }
         else if (!_isChainActive)
         {
@@ -214,7 +239,7 @@ public class ScoreManager : MonoBehaviour
         // Fire event for garbage routing
         OnMatchScored?.Invoke(tilesMatched, _currentCombo, _currentChain);
 
-        Debug.Log($"[ScoreManager] Matched {tilesMatched} tiles | Combo x{_currentCombo} | Chain x{_currentChain} | +{earnedPoints} pts");
+        Debug.Log($"[ScoreManager P{_playerIndex}] Matched {tilesMatched} tiles | Combo x{_currentCombo} | Chain x{_currentChain} | +{earnedPoints} pts");
     }
 
     /// <summary>
@@ -290,7 +315,7 @@ public class ScoreManager : MonoBehaviour
             return gridRiser.speedLevel;
         }
 
-        Debug.LogWarning("[ScoreManager] GridRiser reference is NULL! Returning default level 1.");
+        Debug.LogWarning($"[ScoreManager P{_playerIndex}] GridRiser reference is NULL! Returning default level 1.");
         return 1;
     }
 
@@ -306,7 +331,7 @@ public class ScoreManager : MonoBehaviour
         _comboTimer = 0f;
 
         OnComboStarted?.Invoke();
-        Debug.Log("[ScoreManager] Combo started");
+        Debug.Log($"[ScoreManager P{_playerIndex}] Combo started");
     }
 
     private void EndCombo()
@@ -331,7 +356,7 @@ public class ScoreManager : MonoBehaviour
         OnComboEnded?.Invoke(finalCombo, finalMaxChain);
         
         if (finalCombo > 1)
-            Debug.Log($"[ScoreManager] Combo ended at x{finalCombo} (max chain: x{finalMaxChain})");
+            Debug.Log($"[ScoreManager P{_playerIndex}] Combo ended at x{finalCombo} (max chain: x{finalMaxChain})");
 
         UpdateUI();
     }
@@ -351,7 +376,7 @@ public class ScoreManager : MonoBehaviour
         if (!_isChainActive) return;
 
         if (_currentChain > 1)
-            Debug.Log($"[ScoreManager] Chain ended at x{_currentChain}");
+            Debug.Log($"[ScoreManager P{_playerIndex}] Chain ended at x{_currentChain}");
 
         _isChainActive = false;
         _currentChain = 0;

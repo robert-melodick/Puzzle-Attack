@@ -20,6 +20,7 @@ GameObject:
   - component: {fileID: 5324868256448575238}
   - component: {fileID: 2170238282710276813}
   - component: {fileID: 3798992973142588666}
+  - component: {fileID: 2719030795149614589}
   m_Layer: 0
   m_Name: GridManager
   m_TagString: Untagged
@@ -186,7 +187,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _swapWithFallingThreshold: 0.5
   _slideUnderBlockedThreshold: 0.5
-  _showDebugGizmos: 1
+  _showDebugGizmos: 0
   _showAllRows: 0
   _debugLineWidth: 6
   _swapZoneColor: {r: 0, g: 1, b: 0, a: 0.3}
@@ -275,6 +276,7 @@ MonoBehaviour:
   pointsPerTile: 100
   comboMultiplier: 0.5
   chainBonusPerLevel: 50
+  showScoreUI: 0
   scorePanel: {fileID: 0}
   highScoreText: {fileID: 0}
   scoreText: {fileID: 0}
@@ -283,3 +285,24 @@ MonoBehaviour:
   gridRiser: {fileID: 4701406788802530226}
   comboTimeout: 2
   chainWindow: 0.5
+--- !u!114 &2719030795149614589
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 253549084482168555}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 40b02038665ba5c439e6fc6b5051b71e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  popupPrefab: {fileID: 394585405594382249, guid: 51529bb45fab72749a630d59059fe07b, type: 3}
+  gridManager: {fileID: 0}
+  scoreManager: {fileID: 0}
+  spawnOffset: {x: 0.5, y: 0.5, z: -1}
+  horizontalSpread: 0.5
+  minComboToShow: 2
+  minChainToShow: 2
+  showComboPopups: 1
+  showChainPopups: 1

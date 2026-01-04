@@ -8,6 +8,7 @@ namespace PuzzleAttack.Grid
     /// Controls grid rising mechanics, speed levels, breathing room, and game over detection.
     /// Handles both regular tiles and garbage blocks.
     /// All positions are relative to the GridManager's transform position.
+    /// Reports eliminations to MatchScoreTracker for VS mode support.
     /// </summary>
     public class GridRiser : MonoBehaviour
     {
@@ -64,6 +65,9 @@ namespace PuzzleAttack.Grid
         private bool _isBreathingRoomActive;
         private Coroutine _breathingRoomFlashCoroutine;
 
+        // Player identification for VS modes
+        private int _playerIndex = 0;
+
         #endregion
 
         #region Properties
@@ -71,6 +75,16 @@ namespace PuzzleAttack.Grid
         public float CurrentGridOffset { get; private set; }
         public bool IsInGracePeriod { get; private set; }
         public bool IsGameOver { get; private set; }
+        
+        /// <summary>
+        /// The player index this grid belongs to (0-3).
+        /// Set by GameplaySceneInitializer.
+        /// </summary>
+        public int PlayerIndex
+        {
+            get => _playerIndex;
+            set => _playerIndex = value;
+        }
 
         #endregion
 
@@ -368,10 +382,19 @@ namespace PuzzleAttack.Grid
         private void TriggerGameOver()
         {
             IsGameOver = true;
-            Debug.Log("GAME OVER!");
+            Debug.Log($"GAME OVER for Player {_playerIndex}!");
 
-            if (GameStateManager.Instance != null)
-                GameStateManager.Instance.TriggerGameOver();
+            // Report to MatchScoreTracker for VS mode handling
+            if (MatchScoreTracker.Instance != null)
+            {
+                MatchScoreTracker.Instance.EliminatePlayer(_playerIndex);
+            }
+            else
+            {
+                // Fallback to old behavior if no tracker exists
+                if (GameStateManager.Instance != null)
+                    GameStateManager.Instance.TriggerGameOver();
+            }
         }
 
         /// <summary>

@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &8285192144939938719
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3054082687367885387}
+  - component: {fileID: 8806283045227080599}
+  m_Layer: 0
+  m_Name: GameOverUIController
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3054082687367885387
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8285192144939938719}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -953.9274, y: -532.71564, z: -0.030973751}
+  m_LocalScale: {x: 2.0382166, y: 2.0382166, z: 2.0382166}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &8806283045227080599
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8285192144939938719}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 289259b70d472514d913461e6ee2b0e8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  marathonGameOverPanel: {fileID: 0}
+  vsVictoryPanel: {fileID: 0}
+  marathonTitleText: {fileID: 0}
+  marathonScoreText: {fileID: 0}
+  marathonHighestComboText: {fileID: 0}
+  marathonHighestChainText: {fileID: 0}
+  marathonSpeedLevelText: {fileID: 0}
+  marathonNewHighScoreText: {fileID: 0}
+  marathonRetryButton: {fileID: 0}
+  marathonMainMenuButton: {fileID: 0}
+  victoryTitleText: {fileID: 0}
+  victoryIconImage: {fileID: 0}
+  victorySubtitleText: {fileID: 0}
+  playerStatsContainer: {fileID: 0}
+  playerStatsPrefab: {fileID: 3566593231304360895, guid: 37a7b29b8774e034ea4422e15c40a9c8, type: 3}
+  vsRematchButton: {fileID: 0}
+  vsMainMenuButton: {fileID: 0}
+  humanWinColor: {r: 0.2, g: 0.6, b: 1, a: 1}
+  cpuWinColor: {r: 1, g: 0.5, b: 0.3, a: 1}
+  firstPlaceColor: {r: 1, g: 0.84, b: 0, a: 1}
+  secondPlaceColor: {r: 0.75, g: 0.75, b: 0.75, a: 1}
+  thirdPlaceColor: {r: 0.8, g: 0.5, b: 0.2, a: 1}
+  fourthPlaceColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  eliminationOverlayPrefab: {fileID: 9161210770137107796, guid: d20189648ddef8c4a9f465b5e56884f0, type: 3}
+  eliminationText: RETIRED
